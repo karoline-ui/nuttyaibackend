@@ -43,13 +43,17 @@ class Settings(BaseSettings):
     @validator('CORS_ORIGINS', pre=True)
     def parse_cors(cls, v):
         if isinstance(v, str):
-            # Aceita tanto JSON ["a","b"] quanto vírgula separada a,b
             v = v.strip()
+            if not v:
+                return ["http://localhost:3000"]
             if v.startswith('['):
                 import json
-                return json.loads(v)
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
             return [i.strip() for i in v.split(',') if i.strip()]
-        return v
+        return v or ["http://localhost:3000"]
     
     # Scheduler
     REMINDER_CHECK_INTERVAL: int = 60   # segundos

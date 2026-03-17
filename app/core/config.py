@@ -2,11 +2,11 @@
 app/core/config.py - Configurações centrais
 """
 from pydantic_settings import BaseSettings
+from pydantic import validator
 from typing import List
 import os
 
 class Settings(BaseSettings):
-    BACKEND_URL: str = ""  # Ex: https://nutty-backend.run.app
     # App
     APP_NAME: str = "Nutty.AI"
     APP_VERSION: str = "1.0.0"
@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000","http://localhost:3001","https://localhost:3000"]
+
+    @validator('CORS_ORIGINS', pre=True)
+    def parse_cors(cls, v):
+        if isinstance(v, str):
+            # Aceita tanto JSON ["a","b"] quanto vírgula separada a,b
+            v = v.strip()
+            if v.startswith('['):
+                import json
+                return json.loads(v)
+            return [i.strip() for i in v.split(',') if i.strip()]
+        return v
     
     # Scheduler
     REMINDER_CHECK_INTERVAL: int = 60   # segundos

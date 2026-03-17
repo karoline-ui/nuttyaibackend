@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: nutty-ai-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DEBUG
+        value: "false"
+      - key: PORT
+        value: "8000"

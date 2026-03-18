@@ -259,10 +259,13 @@ async def handle_incoming_message(
             "_simulating":  False,
         }
         try:
+            print(f"🚀 Iniciando run_flow id={matched_flow['id']}")
             await run_flow(matched_flow["id"], workspace_id, context)
+            print(f"✅ run_flow concluído id={matched_flow['id']}")
         except Exception as e:
-            import logging
-            logging.error(f"Flow execution error: {e}")
+            import traceback
+            print(f"❌ Flow execution error: {e}")
+            print(traceback.format_exc())
         return
 
     # 6. Sem flow — usa IA diretamente

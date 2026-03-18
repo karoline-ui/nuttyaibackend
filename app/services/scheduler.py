@@ -10,32 +10,35 @@ import asyncio
 from app.core.config import settings
 from app.core.database import get_supabase
 
-scheduler = AsyncIOScheduler(timezone="America/Fortaleza")
+scheduler = AsyncIOScheduler(
+    timezone="America/Fortaleza",
+    job_defaults={
+        "coalesce": True,        # Se atrasou, executa só uma vez
+        "max_instances": 1,      # Nunca duas execuções simultâneas do mesmo job
+        "misfire_grace_time": 60 # Tolera até 60s de atraso antes de desistir
+    }
+)
 
 async def start_scheduler():
     scheduler.add_job(
         process_pending_reminders,
         IntervalTrigger(seconds=settings.REMINDER_CHECK_INTERVAL),
-        id="reminders",
-        replace_existing=True,
+        id="reminders", replace_existing=True,
     )
     scheduler.add_job(
         process_scheduled_campaigns,
         IntervalTrigger(seconds=settings.CAMPAIGN_CHECK_INTERVAL),
-        id="campaigns",
-        replace_existing=True,
+        id="campaigns", replace_existing=True,
     )
     scheduler.add_job(
         send_appointment_reminders,
         IntervalTrigger(minutes=5),
-        id="apt_reminders",
-        replace_existing=True,
+        id="apt_reminders", replace_existing=True,
     )
     scheduler.add_job(
         process_scheduled_flows,
         IntervalTrigger(minutes=1),
-        id="scheduled_flows",
-        replace_existing=True,
+        id="scheduled_flows", replace_existing=True,
     )
     scheduler.start()
     print("✅ Scheduler started")

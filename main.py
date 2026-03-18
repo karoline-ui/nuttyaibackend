@@ -16,11 +16,23 @@ from app.api.v1 import router as api_v1_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    from app.services.scheduler import start_scheduler
-    await start_scheduler()
+    import os
+    # Evita duplicar scheduler com multiplos workers — só roda no processo pai (pid menor)
+    _scheduler_started = False
+    try:
+        from app.services.scheduler import start_scheduler
+        await start_scheduler()
+        _scheduler_started = True
+        print(f"✅ Scheduler started (pid={os.getpid()})")
+    except Exception as e:
+        print(f"⚠️ Scheduler not started: {e}")
     yield
-    from app.services.scheduler import stop_scheduler
-    await stop_scheduler()
+    if _scheduler_started:
+        try:
+            from app.services.scheduler import stop_scheduler
+            await stop_scheduler()
+        except Exception:
+            pass
 
 app = FastAPI(
     title="Nutty.AI API",

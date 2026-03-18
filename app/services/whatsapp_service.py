@@ -251,7 +251,13 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         # Só processa mensagens recebidas (não enviadas pelo bot)
         if key.get("fromMe", False):
             return
-        if event not in ("messages.upsert", "message", ""):
+
+        # UazAP v2 pode enviar diferentes nomes de evento — aceita qualquer um com mensagem
+        # Eventos conhecidos: "messages.upsert", "message", "MESSAGE", "messages.update"
+        # Se o evento for de status/conexão, ignora
+        skip_events = {"connection.update", "qrcode.updated", "presence.update",
+                       "messages.update", "message_ack", "call", "group_update"}
+        if event in skip_events:
             return
 
         # Extrair telefone do remetente

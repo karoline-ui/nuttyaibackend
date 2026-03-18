@@ -4,7 +4,7 @@ Scheduler para lembretes automáticos, campanhas agendadas e manutenção
 """
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 
 from app.core.config import settings

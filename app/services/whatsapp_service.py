@@ -57,38 +57,43 @@ class WhatsAppService:
     # ── TEXTO ───────────────────────────────────────────────────────────────
     async def send_text(self, phone: str, message: str, workspace_id: str) -> dict:
         """Envia mensagem de texto simples"""
-        return await self._post(f"/message/sendText", {
+        print(f"📤 send_text: phone={phone} workspace={workspace_id} msg={message[:80]!r}")
+        result = await self._post("/send/text", {
             "number": phone,
             "text": message,
+            "delay": 1000,
         }, workspace_id=workspace_id)
+        print(f"📤 send_text result: {result}")
+        return result
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
     async def send_image(self, phone: str, url: str, caption: str, workspace_id: str) -> dict:
-        return await self._post("/message/sendMedia", {
+        return await self._post("/send/media", {
             "number": phone,
-            "mediatype": "image",
-            "mimetype": "image/jpeg",
-            "caption": caption,
-            "media": url,
-            "fileName": "image.jpg",
+            "type": "image",
+            "file": url,
+            "text": caption,
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── ÁUDIO ───────────────────────────────────────────────────────────────
     async def send_audio(self, phone: str, url: str, workspace_id: str) -> dict:
-        return await self._post(f"/message/sendWhatsAppAudio", {
+        return await self._post("/send/media", {
             "number": phone,
-            "audio": url,
+            "type": "ptt",
+            "file": url,
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── DOCUMENTO ───────────────────────────────────────────────────────────
     async def send_document(self, phone: str, url: str, filename: str, workspace_id: str) -> dict:
-        return await self._post(f"/message/sendMedia", {
+        return await self._post("/send/media", {
             "number": phone,
-            "mediatype": "document",
-            "mimetype": "application/pdf",
-            "caption": filename,
-            "media": url,
-            "fileName": filename,
+            "type": "document",
+            "file": url,
+            "docName": filename,
+            "text": filename,
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── BOTÕES RÁPIDOS (até 3) ───────────────────────────────────────────────
@@ -97,15 +102,12 @@ class WhatsAppService:
         Envia mensagem com botões interativos (reply buttons).
         Payload UazAP v2 / Evolution API padrão.
         """
-        return await self._post(f"/message/sendButtons", {
+        return await self._post("/send/menu", {
             "number": phone,
-            "title": "",
-            "description": message,
-            "footer": "",
-            "buttons": [
-                {"type": "reply", "displayText": btn, "id": f"btn_{i}"}
-                for i, btn in enumerate(buttons[:3])
-            ],
+            "type": "button",
+            "text": message,
+            "choices": [f"{btn}|btn_{i}" for i, btn in enumerate(buttons[:3])],
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── LISTA INTERATIVA ────────────────────────────────────────────────────
@@ -114,29 +116,25 @@ class WhatsAppService:
         Envia lista interativa nativa do WhatsApp.
         Agrupa tudo numa seção única.
         """
-        return await self._post(f"/message/sendList", {
+        choices = [f"[{title}]"] + [f"{item}|row_{i}" for i, item in enumerate(items[:10])]
+        return await self._post("/send/menu", {
             "number": phone,
-            "title": title,
-            "description": message,
-            "buttonText": "Ver opções",
-            "footerText": "",
-            "sections": [{
-                "title": title,
-                "rows": [
-                    {"title": item, "description": "", "rowId": f"row_{i}"}
-                    for i, item in enumerate(items[:10])
-                ]
-            }]
+            "type": "list",
+            "text": message,
+            "choices": choices,
+            "listButton": "Ver opções",
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── LOCALIZAÇÃO ─────────────────────────────────────────────────────────
     async def send_location(self, phone: str, lat: float, lng: float, name: str, address: str, workspace_id: str) -> dict:
-        return await self._post(f"/message/sendLocation", {
+        return await self._post("/send/location", {
             "number": phone,
+            "lat": lat,
+            "lng": lng,
             "name": name,
             "address": address,
-            "latitude": lat,
-            "longitude": lng,
+            "delay": 1000,
         }, workspace_id=workspace_id)
 
     # ── DISPARO EM MASSA ────────────────────────────────────────────────────
@@ -164,85 +162,53 @@ class WhatsAppService:
 
     # ── WEBHOOK: CONFIGURAR NA UAZAP ────────────────────────────────────────
     async def set_webhook(self, workspace_id: str, webhook_url: str) -> dict:
-        """Registra webhook no UazAP para o workspace — busca token da instância no banco"""
+        """POST /webhook — modo simples, cria ou atualiza webhook único da instância"""
         try:
-            supabase = get_supabase()
-            # Busca a conexão do workspace para pegar o token da instância
-            result = supabase.table("connections").select("*").eq(
-                "workspace_id", workspace_id
-            ).eq("type", "uazap").limit(1).execute()
-
-            if not result.data:
-                return {"error": "No UazAP connection found"}
-
-            conn = result.data[0]
-            config = conn.get("config", {})
-            instance_token = config.get("api_key") or config.get("token") or settings.UAZAP_API_KEY
-            instance_url = config.get("url") or settings.UAZAP_BASE_URL
-
+            conn = await self._get_connection(workspace_id)
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(
-                    f"{instance_url}/webhook/set",
+                    f"{conn['url']}/webhook",
                     json={
                         "url": webhook_url,
-                        "webhook_by_events": False,
-                        "webhook_base64": False,
-                        "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+                        "events": ["messages"],
+                        "excludeMessages": ["wasSentByApi"],
                     },
                     headers={
                         "Content-Type": "application/json",
-                        "token": instance_token,
+                        "token": conn["api_key"],
                     }
                 )
-                print(f"✅ Webhook set response: {r.status_code} {r.text[:200]}")
+                print(f"✅ Webhook configurado: {r.status_code} {r.text[:200]}")
                 return r.json() if r.content else {"status": r.status_code}
         except Exception as e:
             print(f"⚠️ set_webhook error: {e}")
             return {"error": str(e)}
 
     # ── STATUS DA INSTÂNCIA ─────────────────────────────────────────────────
-    async def get_instance_status(self, instance: str) -> dict:
+    async def get_status(self, workspace_id: str) -> dict:
+        """GET /instance/status — retorna status da conexão"""
         try:
+            conn = await self._get_connection(workspace_id)
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(
-                    f"{settings.UAZAP_BASE_URL}/instance/connectionState/{instance}",
-                    headers={"token": settings.UAZAP_API_KEY}
+                    f"{conn['url']}/instance/status",
+                    headers={"token": conn["api_key"]}
                 )
-                return r.json()
+                data = r.json()
+                return {"connected": data.get("status") == "connected", "state": data.get("status"), **data}
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": str(e), "connected": False}
 
-    # ── QR CODE ─────────────────────────────────────────────────────────────
-    async def get_qrcode(self, instance: str) -> dict:
+    # ── QR CODE / CONNECT ────────────────────────────────────────────────────
+    async def get_qrcode(self, workspace_id: str) -> dict:
+        """POST /instance/connect — gera QR code para conexão"""
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f"{settings.UAZAP_BASE_URL}/instance/connect/{instance}",
-                    headers={"token": settings.UAZAP_API_KEY}
-                )
-                return r.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    # ── STATUS DA INSTÂNCIA ─────────────────────────────────────────────────
-    async def get_instance_status(self, instance: str) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f"{settings.UAZAP_BASE_URL}/instance/connectionState/{instance}",
-                    headers={"token": settings.UAZAP_API_KEY}
-                )
-                return r.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-    # ── QR CODE ─────────────────────────────────────────────────────────────
-    async def get_qrcode(self, instance: str) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f"{settings.UAZAP_BASE_URL}/instance/connect/{instance}",
-                    headers={"token": settings.UAZAP_API_KEY}
+            conn = await self._get_connection(workspace_id)
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{conn['url']}/instance/connect",
+                    json={},
+                    headers={"token": conn["api_key"], "Content-Type": "application/json"}
                 )
                 return r.json()
         except Exception as e:

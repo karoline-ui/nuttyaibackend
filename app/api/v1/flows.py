@@ -691,17 +691,24 @@ async def run_flow(
                 # time_check usa result booleano para decidir caminho
                 if not next_id and "result" in result:
                     r = result["result"]
-                    # Busca nas edges: source_handle "true" ou "false"
-                    true_edges  = [e for e in edges if e.get("source") == node_id and e.get("sourceHandle") in ("true", "yes", "a", None)]
-                    false_edges = [e for e in edges if e.get("source") == node_id and e.get("sourceHandle") in ("false", "no", "b")]
-                    if not false_edges:
-                        # fallback: pega todas as edges e usa ordem
-                        all_edges = [e for e in edges if e.get("source") == node_id]
-                        true_edges  = all_edges[:1]
-                        false_edges = all_edges[1:]
+                    all_edges = [e for e in edges if e.get("source") == node_id]
+                    print(f"🔗 time_check edges: {[(e.get('target'), e.get('sourceHandle'), e.get('label')) for e in all_edges]}")
+                    # sourceHandle pode ser: "true"/"false", "yes"/"no", "a"/"b", "right"/"bottom", ou o target id direto
+                    true_handles  = ("true", "yes", "a", "right", "1", "then")
+                    false_handles = ("false", "no", "b", "bottom", "0", "else")
+                    true_edges  = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in true_handles]
+                    false_edges = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in false_handles]
+                    if not true_edges and not false_edges:
+                        # Sem sourceHandle — usa label da edge como indicador
+                        true_edges  = [e for e in all_edges if str(e.get("label","")).lower() in ("sim","yes","true","dentro","in")]
+                        false_edges = [e for e in all_edges if str(e.get("label","")).lower() in ("não","nao","no","false","fora","out")]
+                    if not true_edges and not false_edges and len(all_edges) == 2:
+                        # Último recurso: primeira edge = true, segunda = false
+                        true_edges  = [all_edges[0]]
+                        false_edges = [all_edges[1]]
                     chosen_edges = true_edges if r else false_edges
                     next_id = chosen_edges[0].get("target") if chosen_edges else None
-                    print(f"🔗 time_check result={r} → next={next_id} (true_edges={[e.get('target') for e in true_edges]} false_edges={[e.get('target') for e in false_edges]})")
+                    print(f"🔗 time_check result={r} → next={next_id}")
             else:
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None

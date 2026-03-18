@@ -24,6 +24,8 @@ async def receive_uazap_webhook(workspace_id: str, request: Request):
     from_me = key.get("fromMe", False)
     jid     = key.get("remoteJid", "")
 
+    import json
+    print(f"📨 WEBHOOK COMPLETO: {json.dumps(payload)[:2000]}")
     print(f"📨 WEBHOOK ws={workspace_id} event={event!r} fromMe={from_me} jid={jid} msg_keys={list(msg.keys())}")
 
     # Ignorar mensagens do próprio bot

@@ -504,14 +504,43 @@ async def generate_ai_response(
     contact: dict,
     workspace_id: str,
     context_override: str = None,
+    conversation_id: str = None,
 ) -> str:
     """Gera resposta da IA para uma mensagem — usado pelo flow action.ai_respond"""
+    from app.core.database import get_supabase
+    supabase = get_supabase()
+
+    # Busca conversa real do contato
+    real_conv_id = conversation_id
+    if not real_conv_id:
+        contact_phone = contact.get("phone", "")
+        contact_result = supabase.table("contacts").select("id").eq(
+            "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+        if contact_result.data:
+            contact_id = contact_result.data[0]["id"]
+            conv_result = supabase.table("conversations").select("id").eq(
+                "workspace_id", workspace_id).eq("contact_id", contact_id).limit(1).execute()
+            if conv_result.data:
+                real_conv_id = conv_result.data[0]["id"]
+
+    # Busca histórico real da conversa
+    history = []
+    if real_conv_id:
+        msgs = supabase.table("messages").select("content, direction, is_ai").eq(
+            "conversation_id", real_conv_id
+        ).order("created_at", desc=True).limit(20).execute()
+        for m in reversed(msgs.data or []):
+            history.append({
+                "direction": m.get("direction", "inbound"),
+                "content": m.get("content", ""),
+            })
+
     result = await process_message(
         workspace_id=workspace_id,
         contact_phone=contact.get("phone", ""),
-        conversation_id="flow",
+        conversation_id=real_conv_id or "flow",
         message_content=message,
-        conversation_history=[],
+        conversation_history=history,
     )
     response = result.get("response", "")
     if context_override:

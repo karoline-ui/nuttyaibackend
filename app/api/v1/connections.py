@@ -11,12 +11,45 @@ router = APIRouter()
 
 BACKEND_URL = "https://nuttyaibackend-897373535500.southamerica-east1.run.app"
 
-async def _register_webhook(workspace_id: str):
-    """Registra a URL de webhook no UazAP para este workspace"""
+async def _register_webhook(workspace_id: str, connection_id: str = None):
+    """
+    Registra a URL de webhook no UazAP E salva no config da connection.
+    Assim fica tudo na tabela connections, filtrado por workspace.
+    """
     try:
+        supabase = get_supabase()
         webhook_url = f"{BACKEND_URL}/api/v1/webhooks/uazap/{workspace_id}"
+
+        # Registra no UazAP
         await whatsapp_client.set_webhook(workspace_id, webhook_url)
-        print(f"✅ Webhook registrado: {webhook_url}")
+        print(f"✅ Webhook registrado no UazAP: {webhook_url}")
+
+        # Salva webhook_url no config da connection (na tabela connections)
+        if connection_id:
+            conn = supabase.table("connections").select("config").eq("id", connection_id).single().execute()
+            current_config = (conn.data or {}).get("config", {}) or {}
+            current_config["webhook_url"] = webhook_url
+            current_config["webhook_registered"] = True
+            supabase.table("connections").update({
+                "config": current_config,
+                "is_active": True,
+            }).eq("id", connection_id).execute()
+            print(f"✅ webhook_url salvo no config da connection {connection_id}")
+        else:
+            # Busca a connection uazap do workspace e atualiza
+            conn = supabase.table("connections").select("id, config").eq(
+                "workspace_id", workspace_id
+            ).eq("type", "uazap").limit(1).execute()
+            if conn.data:
+                cid = conn.data[0]["id"]
+                current_config = conn.data[0].get("config", {}) or {}
+                current_config["webhook_url"] = webhook_url
+                current_config["webhook_registered"] = True
+                supabase.table("connections").update({
+                    "config": current_config,
+                    "is_active": True,
+                }).eq("id", cid).execute()
+                print(f"✅ webhook_url salvo no config da connection {cid}")
     except Exception as e:
         print(f"⚠️ Erro ao registrar webhook: {e}")
 
@@ -34,9 +67,11 @@ async def create_connection(workspace_id: str, body: dict):
     result = supabase.table("connections").insert({
         "workspace_id": workspace_id, **body
     }).execute()
-    # Registra webhook automaticamente
-    await _register_webhook(workspace_id)
-    return result.data[0] if result.data else {}
+    conn = result.data[0] if result.data else {}
+    # Registra webhook e salva no config da connection
+    if conn.get("id") and body.get("type") == "uazap":
+        await _register_webhook(workspace_id, conn["id"])
+    return conn
 
 @router.patch("/{connection_id}")
 async def update_connection(connection_id: str, workspace_id: str, body: dict):
@@ -45,8 +80,8 @@ async def update_connection(connection_id: str, workspace_id: str, body: dict):
     result = supabase.table("connections").update(body).eq(
         "id", connection_id
     ).eq("workspace_id", workspace_id).execute()
-    # Re-registra webhook ao atualizar
-    await _register_webhook(workspace_id)
+    # Re-registra webhook e salva no config
+    await _register_webhook(workspace_id, connection_id)
     return result.data[0] if result.data else {}
 
 @router.delete("/{connection_id}")

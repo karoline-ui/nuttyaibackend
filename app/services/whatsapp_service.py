@@ -11,83 +11,85 @@ from app.core.database import get_supabase
 
 class WhatsAppService:
 
-    async def _get_instance(self, workspace_id: str) -> Optional[str]:
-        """Busca o instance_id da conexão ativa do workspace"""
+    async def _get_connection(self, workspace_id: str) -> dict:
+        """Busca a conexão UazAP ativa do workspace — retorna {url, api_key}"""
         try:
             supabase = get_supabase()
-            result = supabase.table("connections").select("instance_id").eq(
+            result = supabase.table("connections").select("config, is_active").eq(
                 "workspace_id", workspace_id
-            ).eq("status", "connected").limit(1).execute()
+            ).eq("type", "uazap").limit(1).execute()
             if result.data:
-                return result.data[0].get("instance_id")
-        except Exception:
-            pass
-        return None
+                config = result.data[0].get("config", {}) or {}
+                return {
+                    "url": config.get("endpoint") or config.get("url") or settings.UAZAP_BASE_URL,
+                    "api_key": config.get("api_key") or settings.UAZAP_API_KEY,
+                }
+        except Exception as e:
+            print(f"⚠️ _get_connection error: {e}")
+        return {
+            "url": settings.UAZAP_BASE_URL,
+            "api_key": settings.UAZAP_API_KEY,
+        }
 
-    async def _post(self, endpoint: str, payload: dict) -> dict:
-        """Helper: faz POST autenticado na UazAP"""
+    async def _post(self, endpoint: str, payload: dict, workspace_id: str = None) -> dict:
+        """Helper: faz POST autenticado na UazAP usando config do workspace"""
         try:
+            conn = await self._get_connection(workspace_id) if workspace_id else {
+                "url": settings.UAZAP_BASE_URL,
+                "api_key": settings.UAZAP_API_KEY,
+            }
+            print(f"📤 POST {conn['url']}{endpoint}")
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(
-                    f"{settings.UAZAP_BASE_URL}{endpoint}",
+                    f"{conn['url']}{endpoint}",
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
-                        "token": settings.UAZAP_API_KEY,
+                        "token": conn["api_key"],
                     }
                 )
+                print(f"📤 Response {r.status_code}: {r.text[:200]}")
                 return r.json() if r.content else {"status": r.status_code}
         except Exception as e:
+            print(f"❌ _post error: {e}")
             return {"error": str(e)}
 
     # ── TEXTO ───────────────────────────────────────────────────────────────
     async def send_text(self, phone: str, message: str, workspace_id: str) -> dict:
         """Envia mensagem de texto simples"""
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendText/{instance}", {
+        return await self._post(f"/message/sendText", {
             "number": phone,
             "text": message,
-        })
+        }, workspace_id=workspace_id)
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
     async def send_image(self, phone: str, url: str, caption: str, workspace_id: str) -> dict:
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendMedia/{instance}", {
+        return await self._post("/message/sendMedia", {
             "number": phone,
             "mediatype": "image",
             "mimetype": "image/jpeg",
             "caption": caption,
             "media": url,
             "fileName": "image.jpg",
-        })
+        }, workspace_id=workspace_id)
 
     # ── ÁUDIO ───────────────────────────────────────────────────────────────
     async def send_audio(self, phone: str, url: str, workspace_id: str) -> dict:
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendWhatsAppAudio/{instance}", {
+        return await self._post(f"/message/sendWhatsAppAudio", {
             "number": phone,
             "audio": url,
-        })
+        }, workspace_id=workspace_id)
 
     # ── DOCUMENTO ───────────────────────────────────────────────────────────
     async def send_document(self, phone: str, url: str, filename: str, workspace_id: str) -> dict:
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendMedia/{instance}", {
+        return await self._post(f"/message/sendMedia", {
             "number": phone,
             "mediatype": "document",
             "mimetype": "application/pdf",
             "caption": filename,
             "media": url,
             "fileName": filename,
-        })
+        }, workspace_id=workspace_id)
 
     # ── BOTÕES RÁPIDOS (até 3) ───────────────────────────────────────────────
     async def send_buttons(self, phone: str, message: str, buttons: list, workspace_id: str) -> dict:
@@ -95,10 +97,7 @@ class WhatsAppService:
         Envia mensagem com botões interativos (reply buttons).
         Payload UazAP v2 / Evolution API padrão.
         """
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendButtons/{instance}", {
+        return await self._post(f"/message/sendButtons", {
             "number": phone,
             "title": "",
             "description": message,
@@ -115,10 +114,7 @@ class WhatsAppService:
         Envia lista interativa nativa do WhatsApp.
         Agrupa tudo numa seção única.
         """
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendList/{instance}", {
+        return await self._post(f"/message/sendList", {
             "number": phone,
             "title": title,
             "description": message,
@@ -135,16 +131,13 @@ class WhatsAppService:
 
     # ── LOCALIZAÇÃO ─────────────────────────────────────────────────────────
     async def send_location(self, phone: str, lat: float, lng: float, name: str, address: str, workspace_id: str) -> dict:
-        instance = await self._get_instance(workspace_id)
-        if not instance:
-            return {"error": "no_instance"}
-        return await self._post(f"/message/sendLocation/{instance}", {
+        return await self._post(f"/message/sendLocation", {
             "number": phone,
             "name": name,
             "address": address,
             "latitude": lat,
             "longitude": lng,
-        })
+        }, workspace_id=workspace_id)
 
     # ── DISPARO EM MASSA ────────────────────────────────────────────────────
     async def send_bulk_with_delay(

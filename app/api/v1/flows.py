@@ -688,30 +688,41 @@ async def run_flow(
             print(f"🔗 nó {node_label!r} type={node_type_check!r} result={str(result)[:100]}")
             if node_type_check.startswith("condition."):
                 next_id = result.get("next_node_id")
-                # time_check usa result booleano para decidir caminho
                 if not next_id and "result" in result:
                     r = result["result"]
                     all_edges = [e for e in edges if e.get("source") == node_id]
-                    print(f"🔗 condition edges: {[(e.get('target'), e.get('sourceHandle')) for e in all_edges]}")
-                    
-                    # Prioridade 1: sourceHandle explícito (true/false)
+                    print(f"🔗 condition edges raw: {[(e.get('target'), e.get('sourceHandle'), e.get('label')) for e in all_edges]}")
+
+                    # 1. sourceHandle explícito
                     true_edges  = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("true","yes","1","a")]
                     false_edges = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("false","no","0","b")]
-                    
-                    # Prioridade 2: detecta nó de fora do horário pelo label
+
+                    # 2. label da edge
+                    if not true_edges and not false_edges:
+                        true_edges  = [e for e in all_edges if str(e.get("label","")).lower() in ("sim","yes","true","dentro","✓","dentro do horário","horário comercial")]
+                        false_edges = [e for e in all_edges if str(e.get("label","")).lower() in ("não","nao","no","false","fora","✗","fora do horário","fora do horario")]
+
+                    # 3. label do nó destino
                     if not true_edges and not false_edges and len(all_edges) >= 2:
-                        def is_negative_node(tid):
-                            n = next((x for x in nodes if x.get("id") == tid), {})
+                        negative_words = ["fora","out","ausên","ausenc","fechad","indispon","negat","não atend","sem atend"]
+                        positive_words = ["ia","responde","atend","dentro","comercial","ativo","ai"]
+                        def score(target_id, words):
+                            n = next((x for x in nodes if x.get("id") == target_id), {})
                             lbl = n.get("data", {}).get("label", "").lower()
-                            return any(w in lbl for w in ["fora", "out", "ausência", "ausencia", "fechad", "indisponív", "negativo", "não"])
-                        if is_negative_node(all_edges[0].get("target")):
-                            false_edges, true_edges = [all_edges[0]], all_edges[1:]
+                            return sum(1 for w in words if w in lbl)
+                        # Ordena: maior score positive = true, maior score negative = false
+                        sorted_by_positive = sorted(all_edges, key=lambda e: score(e.get("target",""), positive_words), reverse=True)
+                        sorted_by_negative = sorted(all_edges, key=lambda e: score(e.get("target",""), negative_words), reverse=True)
+                        if score(sorted_by_negative[0].get("target",""), negative_words) > 0:
+                            false_edges = [sorted_by_negative[0]]
+                            true_edges  = [e for e in all_edges if e != false_edges[0]]
                         else:
-                            true_edges, false_edges = [all_edges[0]], all_edges[1:]
-                    
+                            true_edges  = [sorted_by_positive[0]]
+                            false_edges = [e for e in all_edges if e != true_edges[0]]
+
                     chosen = true_edges if r else false_edges
                     next_id = chosen[0].get("target") if chosen else None
-                    print(f"🔗 condition result={r} → next={next_id}")
+                    print(f"🔗 condition result={r} true_targets={[e.get('target') for e in true_edges]} false_targets={[e.get('target') for e in false_edges]} → next={next_id}")
             else:
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None

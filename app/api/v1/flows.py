@@ -692,39 +692,26 @@ async def run_flow(
                 if not next_id and "result" in result:
                     r = result["result"]
                     all_edges = [e for e in edges if e.get("source") == node_id]
-                    print(f"🔗 time_check edges: {[(e.get('target'), e.get('sourceHandle'), e.get('label')) for e in all_edges]}")
+                    print(f"🔗 condition edges: {[(e.get('target'), e.get('sourceHandle')) for e in all_edges]}")
                     
-                    # Tenta usar sourceHandle
-                    true_handles  = ("true", "yes", "a", "right", "1", "then", "dentro", "in")
-                    false_handles = ("false", "no", "b", "bottom", "0", "else", "fora", "out")
-                    true_edges  = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in true_handles]
-                    false_edges = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in false_handles]
+                    # Prioridade 1: sourceHandle explícito (true/false)
+                    true_edges  = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("true","yes","1","a")]
+                    false_edges = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("false","no","0","b")]
                     
-                    # Tenta label da edge
-                    if not true_edges and not false_edges:
-                        true_edges  = [e for e in all_edges if str(e.get("label","")).lower() in ("sim","yes","true","dentro","in","✓")]
-                        false_edges = [e for e in all_edges if str(e.get("label","")).lower() in ("não","nao","no","false","fora","out","✗")]
-                    
-                    # Fallback: vê o target de cada edge e compara com os nós do flow
-                    # O nó de "fora do horário" geralmente tem "send_text" ou "out" no id
+                    # Prioridade 2: detecta nó de fora do horário pelo label
                     if not true_edges and not false_edges and len(all_edges) >= 2:
-                        # Identifica qual nó é "fora do horário" pelo label ou tipo
-                        def is_out_of_hours_node(target_id):
-                            n = next((x for x in nodes if x.get("id") == target_id), {})
-                            label = n.get("data", {}).get("label", "").lower()
-                            return any(w in label for w in ["fora", "out", "ausência", "ausencia", "fechad", "indisponível"])
-                        
-                        edge0_is_out = is_out_of_hours_node(all_edges[0].get("target"))
-                        if edge0_is_out:
-                            false_edges = [all_edges[0]]
-                            true_edges  = all_edges[1:]
+                        def is_negative_node(tid):
+                            n = next((x for x in nodes if x.get("id") == tid), {})
+                            lbl = n.get("data", {}).get("label", "").lower()
+                            return any(w in lbl for w in ["fora", "out", "ausência", "ausencia", "fechad", "indisponív", "negativo", "não"])
+                        if is_negative_node(all_edges[0].get("target")):
+                            false_edges, true_edges = [all_edges[0]], all_edges[1:]
                         else:
-                            true_edges  = [all_edges[0]]
-                            false_edges = all_edges[1:]
+                            true_edges, false_edges = [all_edges[0]], all_edges[1:]
                     
-                    chosen_edges = true_edges if r else false_edges
-                    next_id = chosen_edges[0].get("target") if chosen_edges else None
-                    print(f"🔗 time_check result={r} → next={next_id} (true={[e.get('target') for e in true_edges]} false={[e.get('target') for e in false_edges]})")
+                    chosen = true_edges if r else false_edges
+                    next_id = chosen[0].get("target") if chosen else None
+                    print(f"🔗 condition result={r} → next={next_id}")
             else:
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None

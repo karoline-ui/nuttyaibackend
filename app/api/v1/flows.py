@@ -723,6 +723,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     node_type = node.get("data", {}).get("nodeType") or node.get("type", "")
     config    = interpolate_variables(node.get("data", {}).get("config", {}), context)
     supabase  = get_supabase()
+    print(f"🔧 execute_node: type={node_type} contact={context.get('contact',{}).get('phone','?')} simulating={context.get('_simulating')}")
 
     # ── TRIGGERS ──────────────────────────────────────────────────────────────
     if node_type.startswith("trigger."):
@@ -832,8 +833,14 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.send_text":
         phone   = config.get("to", "") or context.get("contact", {}).get("phone", "")
         message = config.get("message", "")
+        print(f"📤 action.send_text: phone={phone!r} message={message[:80]!r} simulating={context.get('_simulating')}")
         if phone and message and not context.get("_simulating"):
-            await whatsapp_client.send_text(phone, message, workspace_id)
+            result = await whatsapp_client.send_text(phone, message, workspace_id)
+            print(f"📤 send_text result: {result}")
+        elif not phone:
+            print(f"❌ send_text: phone vazio! contact={context.get('contact')}")
+        elif not message:
+            print(f"❌ send_text: message vazio! config={config}")
         return {"status": "sent", "to": phone, "message": message[:200]}
 
     elif node_type == "action.send_image":

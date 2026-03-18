@@ -60,7 +60,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             # Buscar contact_id pelo phone
             contact = supabase.table("contacts").select("id").eq(
                 "workspace_id", workspace_id
-            ).eq("phone", contact_phone).single().execute()
+            ).eq("phone", contact_phone).limit(1).execute()
             
             if not contact.data:
                 return "❌ Contato não encontrado"
@@ -85,37 +85,64 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
     @tool
     def get_available_slots(date: str, professional: str = "") -> str:
         """
-        Verifica horários disponíveis na agenda.
-        date no formato YYYY-MM-DD
+        Verifica horários DISPONÍVEIS na agenda para agendamento.
+        date no formato YYYY-MM-DD. Retorna slots livres baseado no horário comercial.
         """
         try:
-            # Buscar agendamentos do dia
-            start = f"{date}T00:00:00"
-            end = f"{date}T23:59:59"
-            
-            query = supabase.table("appointments").select("start_time, end_time, professional").eq(
+            from datetime import datetime as _dt, timedelta as _td
+            # Buscar agendamentos ocupados no dia
+            start_of_day = f"{date}T00:00:00"
+            end_of_day   = f"{date}T23:59:59"
+            query = supabase.table("appointments").select("start_time, end_time").eq(
                 "workspace_id", workspace_id
-            ).gte("start_time", start).lte("start_time", end).neq("status", "cancelled")
-            
+            ).gte("start_time", start_of_day).lte("start_time", end_of_day).neq("status", "cancelled")
             if professional:
                 query = query.eq("professional", professional)
-            
-            appointments = query.execute()
-            
-            # Buscar horário de funcionamento do workspace
-            ws = supabase.table("workspaces").select("business_hours").eq(
-                "id", workspace_id
-            ).single().execute()
-            
-            occupied = [
-                f"{a['start_time'][:16]} - {a['end_time'][:16]}"
-                for a in (appointments.data or [])
-            ]
-            
-            if not occupied:
-                return f"Dia {date} está completamente livre!"
-            
-            return f"Horários ocupados em {date}: {', '.join(occupied)}"
+            booked = query.execute()
+            occupied_ranges = []
+            for a in (booked.data or []):
+                try:
+                    s = _dt.fromisoformat(a["start_time"][:16])
+                    e = _dt.fromisoformat(a["end_time"][:16])
+                    occupied_ranges.append((s.hour * 60 + s.minute, e.hour * 60 + e.minute))
+                except Exception:
+                    pass
+
+            # Buscar horário comercial do workspace
+            ws = supabase.table("workspaces").select("business_hours").eq("id", workspace_id).limit(1).execute()
+            bh = (ws.data or {}).get("business_hours", {})
+            day_names = ["sun","mon","tue","wed","thu","fri","sat"]
+            try:
+                weekday = _dt.strptime(date, "%Y-%m-%d").weekday()  # 0=mon
+                day_key = day_names[(weekday + 1) % 7]  # adjust to sun=0
+                day_hours = bh.get(day_key)
+            except Exception:
+                day_hours = {"open": "08:00", "close": "18:00"}
+
+            if not day_hours:
+                return f"❌ {date} é dia fechado conforme horário comercial configurado."
+
+            open_h, open_m   = [int(x) for x in day_hours.get("open",  "08:00").split(":")]
+            close_h, close_m = [int(x) for x in day_hours.get("close", "18:00").split(":")]
+            open_mins  = open_h  * 60 + open_m
+            close_mins = close_h * 60 + close_m
+
+            # Gerar slots de 1 hora
+            free_slots = []
+            cur = open_mins
+            while cur + 60 <= close_mins:
+                slot_end = cur + 60
+                is_free = all(not (cur < occ_end and slot_end > occ_start) for occ_start, occ_end in occupied_ranges)
+                if is_free:
+                    h, m = divmod(cur, 60)
+                    free_slots.append(f"{h:02d}:{m:02d}")
+                cur += 60
+
+            if not free_slots:
+                return f"Infelizmente {date} está totalmente ocupado. Deseja verificar outra data?"
+
+            slots_str = ", ".join(free_slots)
+            return f"Horários disponíveis em {date}: {slots_str}"
         except Exception as e:
             return f"❌ Erro ao verificar agenda: {str(e)}"
 
@@ -182,7 +209,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         try:
             media = supabase.table("media_files").select("*").eq(
                 "id", media_file_id
-            ).eq("workspace_id", workspace_id).single().execute()
+            ).eq("workspace_id", workspace_id).limit(1).execute()
             
             if not media.data:
                 return "❌ Arquivo não encontrado"
@@ -230,7 +257,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             
             contact = supabase.table("contacts").select("id").eq(
                 "workspace_id", workspace_id
-            ).eq("phone", phone).single().execute()
+            ).eq("phone", phone).limit(1).execute()
             
             supabase.table("reminders").insert({
                 "workspace_id": workspace_id,
@@ -278,14 +305,14 @@ async def process_message(
     # Buscar configurações do workspace
     ws = supabase_client.table("workspaces").select(
         "ai_persona, ai_instructions, settings, segment, niche"
-    ).eq("id", workspace_id).single().execute()
+    ).eq("id", workspace_id).limit(1).execute()
     
     if not ws.data:
         return {"response": "Workspace não encontrado", "actions": []}
     
-    persona_name = ws.data.get("ai_persona", "Nutty")
-    instructions = ws.data.get("ai_instructions", "")
-    segment      = ws.data.get("segment", "")
+    persona_name = (ws.data[0] if ws.data else {}).get("ai_persona", "Nutty")
+    instructions = (ws.data[0] if ws.data else {}).get("ai_instructions", "")
+    segment      = (ws.data[0] if ws.data else {}).get("segment", "")
     # API key: busca da conexão Gemini ativa do workspace, senão usa a global do .env
     ws_api_key = settings.GEMINI_API_KEY
     try:

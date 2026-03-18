@@ -17,7 +17,7 @@ async def list_workspaces():
 @router.get("/{workspace_id}")
 async def get_workspace(workspace_id: str):
     supabase = get_supabase()
-    result = supabase.table("workspaces").select("*").eq("id", workspace_id).single().execute()
+    result = supabase.table("workspaces").select("*").eq("id", workspace_id).limit(1).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return result.data

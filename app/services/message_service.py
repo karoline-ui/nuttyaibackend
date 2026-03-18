@@ -11,10 +11,10 @@ async def get_conversation(workspace_id: str, contact_id: str) -> dict:
 
     existing = supabase.table("conversations").select("*").eq(
         "workspace_id", workspace_id
-    ).eq("contact_id", contact_id).single().execute()
+    ).eq("contact_id", contact_id).limit(1).execute()
 
     if existing.data:
-        return existing.data
+        return existing.data[0]
 
     # Criar nova conversa
     new_conv = supabase.table("conversations").insert({

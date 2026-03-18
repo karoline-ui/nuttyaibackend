@@ -64,7 +64,7 @@ async def process_pending_reminders():
         try:
             contact = supabase.table("contacts").select("phone").eq(
                 "id", reminder["contact_id"]
-            ).single().execute()
+            ).limit(1).execute()
 
             if contact.data and contact.data.get("phone"):
                 await whatsapp_client.send_text(

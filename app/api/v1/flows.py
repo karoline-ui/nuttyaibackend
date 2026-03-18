@@ -125,7 +125,7 @@ async def get_flow(flow_id: str, workspace_id: str):
     supabase = get_supabase()
     result = supabase.table("flows").select("*").eq(
         "id", flow_id
-    ).eq("workspace_id", workspace_id).single().execute()
+    ).eq("workspace_id", workspace_id).limit(1).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Flow not found")
@@ -139,8 +139,8 @@ async def update_flow(flow_id: str, workspace_id: str, body: dict):
 
     # Buscar trigger atual se não enviado
     current = supabase.table("flows").select("trigger").eq(
-        "id", flow_id).eq("workspace_id", workspace_id).single().execute()
-    current_trigger = current.data.get("trigger", "message_received") if current.data else "message_received"
+        "id", flow_id).eq("workspace_id", workspace_id).limit(1).execute()
+    current_trigger = (current.data[0] if current.data else {}).get("trigger", "message_received") if current.data else "message_received"
 
     update_data = {
         "name": body.get("name") or "Flow",
@@ -178,7 +178,7 @@ async def delete_flow(flow_id: str, workspace_id: str):
     # Verifica se o flow pertence ao workspace antes de deletar
     flow = supabase.table("flows").select("id").eq(
         "id", flow_id
-    ).eq("workspace_id", workspace_id).single().execute()
+    ).eq("workspace_id", workspace_id).limit(1).execute()
     if not flow.data:
         raise HTTPException(status_code=404, detail="Flow não encontrado")
     supabase.table("flows").delete().eq("id", flow_id).eq(
@@ -212,12 +212,12 @@ async def simulate_flow(flow_id: str, workspace_id: str, body: dict = {}):
     """
     supabase = get_supabase()
 
-    flow = supabase.table("flows").select("*").eq("id", flow_id).eq("workspace_id", workspace_id).single().execute()
+    flow = supabase.table("flows").select("*").eq("id", flow_id).eq("workspace_id", workspace_id).limit(1).execute()
     if not flow.data:
         raise HTTPException(status_code=404, detail="Flow não encontrado")
 
-    nodes = flow.data.get("nodes", [])
-    edges = flow.data.get("edges", [])
+    nodes = (flow.data[0] if flow.data else {}).get("nodes", [])
+    edges = (flow.data[0] if flow.data else {}).get("edges", [])
 
     if not nodes:
         return {"steps": [], "error": "Flow sem nós. Adicione pelo menos um gatilho e uma ação."}
@@ -311,8 +311,8 @@ async def simulate_flow(flow_id: str, workspace_id: str, body: dict = {}):
                 ctx = config.get("context_override", "")
                 # Busca nome da persona do workspace
                 try:
-                    ws_data = supabase.table("workspaces").select("ai_persona").eq("id", workspace_id).single().execute()
-                    persona_name = ws_data.data.get("ai_persona", "IA") if ws_data.data else "IA"
+                    ws_data = supabase.table("workspaces").select("ai_persona").eq("id", workspace_id).limit(1).execute()
+                    persona_name = (ws_data.data[0] if ws_data.data else {}).get("ai_persona", "IA") if ws_data.data else "IA"
                 except Exception:
                     persona_name = "IA"
                 ai_response_text = ""
@@ -324,8 +324,8 @@ async def simulate_flow(flow_id: str, workspace_id: str, body: dict = {}):
                         try:
                             ws_instructions = supabase.table("workspaces").select(
                                 "ai_instructions,ai_persona"
-                            ).eq("id", workspace_id).single().execute()
-                            if ws_instructions.data and ws_instructions.data.get("ai_instructions"):
+                            ).eq("id", workspace_id).limit(1).execute()
+                            if ws_instructions.data and (ws_instructions.data[0] if ws_instructions.data else {}).get("ai_instructions"):
                                 pass  # system prompt já é injetado pelo process_message
                         except Exception:
                             pass
@@ -604,12 +604,12 @@ async def run_flow(
     
     try:
         # Buscar flow
-        flow = supabase.table("flows").select("*").eq("id", flow_id).single().execute()
+        flow = supabase.table("flows").select("*").eq("id", flow_id).limit(1).execute()
         if not flow.data:
             return
         
-        nodes = flow.data.get("nodes", [])
-        edges = flow.data.get("edges", [])
+        nodes = (flow.data[0] if flow.data else {}).get("nodes", [])
+        edges = (flow.data[0] if flow.data else {}).get("edges", [])
         
         # Contexto de execução
         context = {
@@ -627,6 +627,7 @@ async def run_flow(
         # Executar nodes em sequência
         current_node = start_nodes[0]
         visited = set()
+        node_logs = []  # log por nó estilo n8n
         
         while current_node:
             node_id = current_node.get("id")
@@ -634,9 +635,44 @@ async def run_flow(
                 break
             visited.add(node_id)
             
-            # Executar node
-            result = await execute_node(current_node, context, workspace_id)
-            context["variables"][f"node_{node_id}"] = result
+            node_start = datetime.now()
+            node_type = current_node.get("data", {}).get("nodeType") or current_node.get("type", "")
+            node_label = current_node.get("data", {}).get("label", node_type)
+            node_log = {
+                "node_id": node_id,
+                "node_type": node_type,
+                "node_label": node_label,
+                "status": "running",
+                "input": {k: v for k, v in context.get("variables", {}).items()},
+                "output": None,
+                "error": None,
+                "duration_ms": 0,
+                "started_at": node_start.isoformat(),
+            }
+            
+            try:
+                result = await execute_node(current_node, context, workspace_id)
+                context["variables"][f"node_{node_id}"] = result
+                node_log["status"] = "success"
+                node_log["output"] = result
+            except Exception as node_err:
+                node_log["status"] = "error"
+                node_log["error"] = str(node_err)
+                node_log["output"] = {}
+                result = {}
+            
+            node_log["duration_ms"] = int((datetime.now() - node_start).total_seconds() * 1000)
+            node_logs.append(node_log)
+            
+            # Atualiza exec com logs parciais em tempo real
+            if exec_id:
+                supabase.table("flow_executions").update({
+                    "node_logs": node_logs,
+                }).eq("id", exec_id).execute()
+            
+            # Para se erro no nó
+            if node_log["status"] == "error":
+                raise Exception(f"Erro no nó '{node_label}': {node_log['error']}")
             
             # Se flow está aguardando input do usuário — para aqui
             if context.get("_waiting_input"):
@@ -646,7 +682,6 @@ async def run_flow(
             if current_node.get("type", "").startswith("condition."):
                 next_id = result.get("next_node_id")
             else:
-                # Pegar próximo edge
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None
             
@@ -661,6 +696,7 @@ async def run_flow(
             supabase.table("flow_executions").update({
                 "status": "success",
                 "result": context["variables"],
+                "node_logs": node_logs,
                 "duration_ms": duration,
                 "finished_at": datetime.now().isoformat(),
             }).eq("id", exec_id).execute()
@@ -676,6 +712,7 @@ async def run_flow(
             supabase.table("flow_executions").update({
                 "status": "failed",
                 "error": str(e),
+                "node_logs": node_logs if 'node_logs' in locals() else [],
                 "duration_ms": duration,
                 "finished_at": datetime.now().isoformat(),
             }).eq("id", exec_id).execute()
@@ -784,10 +821,10 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "condition.subflow":
         subflow_id = config.get("subflow_id", "")
         if subflow_id and not context.get("_simulating"):
-            sub = supabase.table("flows").select("*").eq("id", subflow_id).single().execute()
+            sub = supabase.table("flows").select("*").eq("id", subflow_id).limit(1).execute()
             if sub.data:
                 sub_context = {**context, "variables": dict(context.get("variables", {}))}
-                for sub_node_data in (sub.data.get("nodes") or []):
+                for sub_node_data in ((sub.data[0] if sub.data else {}).get("nodes") or []):
                     await execute_node(sub_node_data, sub_context, workspace_id)
         return {"status": "subflow_called", "subflow_id": subflow_id}
 
@@ -939,8 +976,8 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     # ── AGENDA ────────────────────────────────────────────────────────────────
     elif node_type == "action.create_appointment":
         contact = context.get("contact", {})
-        contact_result = supabase.table("contacts").select("id").eq("workspace_id", workspace_id).eq("phone", contact.get("phone","")).single().execute()
-        contact_id = contact_result.data.get("id") if contact_result.data else None
+        contact_result = supabase.table("contacts").select("id").eq("workspace_id", workspace_id).eq("phone", contact.get("phone","")).limit(1).execute()
+        contact_id = (contact_result.data[0] if contact_result.data else {}).get("id") if contact_result.data else None
         if contact_id:
             supabase.table("appointments").insert({
                 "workspace_id": workspace_id,
@@ -1028,8 +1065,8 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         tag   = config.get("tag", "").strip().lower()
         phone = context.get("contact", {}).get("phone", "")
         if tag and phone:
-            row = supabase.table("contacts").select("tags").eq("workspace_id", workspace_id).eq("phone", phone).single().execute()
-            current = row.data.get("tags") or [] if row.data else []
+            row = supabase.table("contacts").select("tags").eq("workspace_id", workspace_id).eq("phone", phone).limit(1).execute()
+            current = (row.data[0] if row.data else {}).get("tags") or [] if row.data else []
             if tag not in current:
                 supabase.table("contacts").update({"tags": current + [tag]}).eq("workspace_id", workspace_id).eq("phone", phone).execute()
             context.get("contact", {}).setdefault("tags", [])
@@ -1041,8 +1078,8 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         tag   = config.get("tag", "").strip().lower()
         phone = context.get("contact", {}).get("phone", "")
         if tag and phone:
-            row = supabase.table("contacts").select("tags").eq("workspace_id", workspace_id).eq("phone", phone).single().execute()
-            current = row.data.get("tags") or [] if row.data else []
+            row = supabase.table("contacts").select("tags").eq("workspace_id", workspace_id).eq("phone", phone).limit(1).execute()
+            current = (row.data[0] if row.data else {}).get("tags") or [] if row.data else []
             supabase.table("contacts").update({"tags": [t for t in current if t != tag]}).eq("workspace_id", workspace_id).eq("phone", phone).execute()
         return {"status": "tag_removed", "tag": tag}
 
@@ -1068,8 +1105,8 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         pts   = int(config.get("points", 0))
         field = config.get("score_field", "lead_score")
         if phone:
-            row = supabase.table("contacts").select(field).eq("workspace_id", workspace_id).eq("phone", phone).single().execute()
-            current_score = int(row.data.get(field) or 0) if row.data else 0
+            row = supabase.table("contacts").select(field).eq("workspace_id", workspace_id).eq("phone", phone).limit(1).execute()
+            current_score = int((row.data[0] if row.data else {}).get(field) or 0) if row.data else 0
             new_score = max(0, current_score + pts)
             supabase.table("contacts").update({field: new_score}).eq("workspace_id", workspace_id).eq("phone", phone).execute()
             context["variables"][f"_score_{field}"] = new_score

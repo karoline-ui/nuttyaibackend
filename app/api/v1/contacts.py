@@ -57,7 +57,7 @@ async def add_tag_to_contacts(workspace_id: str, body: dict):
         return {"error": "tag required"}
     updated = 0
     for cid in contact_ids:
-        row = supabase.table("contacts").select("tags").eq("id", cid).single().execute()
+        row = supabase.table("contacts").select("tags").eq("id", cid).limit(1).execute()
         current = row.data.get("tags") or [] if row.data else []
         if tag not in current:
             supabase.table("contacts").update({"tags": current + [tag]}).eq("id", cid).execute()
@@ -73,7 +73,7 @@ async def remove_tag_from_contacts(workspace_id: str, body: dict):
     contact_ids = body.get("contact_ids", [])
     updated = 0
     for cid in contact_ids:
-        row = supabase.table("contacts").select("tags").eq("id", cid).single().execute()
+        row = supabase.table("contacts").select("tags").eq("id", cid).limit(1).execute()
         current = row.data.get("tags") or [] if row.data else []
         if tag in current:
             supabase.table("contacts").update({"tags": [t for t in current if t != tag]}).eq("id", cid).execute()

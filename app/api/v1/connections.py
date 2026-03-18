@@ -26,7 +26,7 @@ async def _register_webhook(workspace_id: str, connection_id: str = None):
 
         # Salva webhook_url no config da connection (na tabela connections)
         if connection_id:
-            conn = supabase.table("connections").select("config").eq("id", connection_id).single().execute()
+            conn = supabase.table("connections").select("config").eq("id", connection_id).limit(1).execute()
             current_config = (conn.data or {}).get("config", {}) or {}
             current_config["webhook_url"] = webhook_url
             current_config["webhook_registered"] = True
@@ -103,7 +103,7 @@ async def test_connection(connection_id: str, workspace_id: str):
     supabase = get_supabase()
     conn = supabase.table("connections").select("*").eq(
         "id", connection_id
-    ).eq("workspace_id", workspace_id).single().execute()
+    ).eq("workspace_id", workspace_id).limit(1).execute()
     if not conn.data:
         raise HTTPException(status_code=404, detail="Connection not found")
 

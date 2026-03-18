@@ -112,7 +112,6 @@ async def handle_incoming_message(
     # Salva mensagem recebida
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
-        "contact_phone": phone,
         "direction":    "inbound",
         "content":      content or f"[{message_type}]",
         "type":         message_type,
@@ -295,7 +294,6 @@ async def handle_incoming_message(
     # 8. Salva resposta da IA
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
-        "contact_phone": phone,
         "direction":    "outbound",
         "content":      response_text,
         "type":         "text",

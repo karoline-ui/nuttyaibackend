@@ -880,6 +880,21 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         if phone and message and not context.get("_simulating"):
             result = await whatsapp_client.send_text(phone, message, workspace_id)
             print(f"📤 send_text result: {result}")
+            # Salva mensagem enviada no histórico
+            try:
+                from app.services.message_service import save_message, get_conversation
+                contact_id = context.get("contact", {}).get("id")
+                if contact_id:
+                    conv = await get_conversation(workspace_id, contact_id)
+                    await save_message(workspace_id, conv.get("id"), {
+                        "contact_id": contact_id,
+                        "direction": "outbound",
+                        "content": message,
+                        "type": "text",
+                        "is_ai": True,
+                    })
+            except Exception as e:
+                print(f"⚠️ save_message error: {e}")
         elif not phone:
             print(f"❌ send_text: phone vazio! contact={context.get('contact')}")
         elif not message:
@@ -960,10 +975,29 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         phone   = contact.get("phone", "")
         print(f"🤖 ai_respond: phone={phone!r} message={message!r} simulating={context.get('_simulating')}")
         if phone and message and not context.get("_simulating"):
-            response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"))
+            conv_id = None
+            contact_id = contact.get("id")
+            if contact_id:
+                from app.services.message_service import get_conversation
+                conv = await get_conversation(workspace_id, contact_id)
+                conv_id = conv.get("id")
+            response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"), conversation_id=conv_id)
             print(f"🤖 ai_respond gerou: {response_text[:200]!r}")
             result = await whatsapp_client.send_text(phone, response_text, workspace_id)
             print(f"🤖 send_text result: {result}")
+            # Salva mensagem da IA no histórico
+            try:
+                from app.services.message_service import save_message
+                if conv_id and contact_id:
+                    await save_message(workspace_id, conv_id, {
+                        "contact_id": contact_id,
+                        "direction": "outbound",
+                        "content": response_text,
+                        "type": "text",
+                        "is_ai": True,
+                    })
+            except Exception as e:
+                print(f"⚠️ save_message error: {e}")
             return {"status": "ai_responded", "response": response_text[:300]}
         if not phone:
             print(f"❌ ai_respond: phone vazio! contact={contact}")

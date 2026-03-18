@@ -23,16 +23,16 @@ import json
 from app.core.config import settings
 from app.core.database import get_supabase
 
-# Configurar Gemini
-genai.configure(api_key=settings.GEMINI_API_KEY)
-
-# LLM principal
-llm = ChatGoogleGenerativeAI(
-    model=settings.GEMINI_MODEL,
-    google_api_key=settings.GEMINI_API_KEY,
-    temperature=0.7,
-    streaming=True,
-)
+# Gemini configurado por workspace — não global
+def get_workspace_llm(api_key: str = None):
+    """Cria LLM com a chave do workspace ou a global como fallback"""
+    key = api_key or settings.GEMINI_API_KEY
+    return ChatGoogleGenerativeAI(
+        model=settings.GEMINI_MODEL,
+        google_api_key=key,
+        temperature=0.7,
+        streaming=True,
+    )
 
 # ══════════════════════════════════════════════
 # FERRAMENTAS (Tools) que a IA pode executar
@@ -384,7 +384,8 @@ REGRAS IMPORTANTES:
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
     
-    agent = create_tool_calling_agent(llm, tools, prompt)
+    ws_llm = get_workspace_llm(ws_api_key)
+    agent = create_tool_calling_agent(ws_llm, tools, prompt)
     agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,

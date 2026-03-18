@@ -254,71 +254,67 @@ whatsapp_client = WhatsAppService()
 
 async def process_incoming_webhook(payload: dict, workspace_id: str):
     """
-    Processa webhook recebido do UazAP.
-    Extrai a mensagem, salva na conversa e aciona a IA se necessário.
+    Processa webhook recebido do UazAP v2.
+    Estrutura: { EventType, message: {content, chatid, fromMe}, chat: {phone} }
     """
-    import logging
-    import json
-    logger = logging.getLogger(__name__)
-
     try:
         from app.services.message_service import handle_incoming_message
 
-        # Log do payload completo para debug
-        logger.info(f"📨 Webhook recebido workspace={workspace_id} payload={json.dumps(payload)[:500]}")
+        # ── UazAP v2 format ──────────────────────────────────────────────
+        event_type = payload.get("EventType", "") or payload.get("event", "")
+        msg        = payload.get("message", {})
+        chat       = payload.get("chat", {})
 
-        data    = payload.get("data", {})
-        key     = data.get("key", {})
-        msg     = data.get("message", {})
-        event   = payload.get("event", "")
+        # Ignorar eventos que não são mensagens
+        if event_type not in ("messages", "message", "messages.upsert", ""):
+            skip = {"connection", "qrcode", "presence", "ack", "call", "group"}
+            if any(s in event_type.lower() for s in skip):
+                print(f"⏭️ Ignorando evento {event_type!r}")
+                return
 
-        logger.info(f"📨 event={event!r} fromMe={key.get('fromMe')} remoteJid={key.get('remoteJid')} msg_keys={list(msg.keys())}")
-
-        # Só processa mensagens recebidas (não enviadas pelo bot)
-        if key.get("fromMe", False):
-            logger.info("⏭️ Ignorando mensagem própria")
+        # Ignorar mensagens enviadas pelo bot
+        from_me = msg.get("fromMe", False) or msg.get("from_me", False)
+        if from_me:
+            print(f"⏭️ Ignorando fromMe")
             return
 
-        # Se o evento for de status/conexão, ignora
-        skip_events = {"connection.update", "qrcode.updated", "presence.update",
-                       "message_ack", "call", "group_update"}
-        if event in skip_events:
-            logger.info(f"⏭️ Ignorando evento {event}")
-            return
-
-        # Extrair telefone do remetente
-        remote_jid = key.get("remoteJid", "")
-        phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+        # Extrair telefone — UazAP v2 usa chatid ou chat.phone
+        chat_id = msg.get("chatid", "") or chat.get("wa_chatid", "")
+        phone = chat_id.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "")
         if not phone:
+            # fallback: chat.phone
+            phone = chat.get("phone", "").replace("+", "").replace(" ", "").replace("-", "")
+        if not phone:
+            print(f"⚠️ Sem telefone no payload")
             return
 
-        # Extrair conteúdo da mensagem
-        content      = ""
+        # Ignorar grupos
+        if "@g.us" in chat_id or chat.get("wa_isGroup", False):
+            print(f"⏭️ Ignorando grupo {chat_id}")
+            return
+
+        # Extrair conteúdo — UazAP v2 usa message.content diretamente
+        content      = msg.get("content", "") or msg.get("body", "") or msg.get("text", "")
         message_type = "text"
         media_data   = None
         media_mime   = None
 
-        if msg.get("conversation"):
-            content = msg["conversation"]
-        elif msg.get("extendedTextMessage"):
-            content = msg["extendedTextMessage"].get("text", "")
-        elif msg.get("imageMessage"):
-            content      = msg["imageMessage"].get("caption", "")
-            message_type = "image"
-        elif msg.get("audioMessage"):
+        msg_type = msg.get("type", "") or msg.get("messageType", "") or msg.get("wa_lastMessageType", "")
+        msg_type_lower = msg_type.lower()
+
+        if "audio" in msg_type_lower:
             message_type = "audio"
-        elif msg.get("documentMessage"):
-            content      = msg["documentMessage"].get("fileName", "")
-            message_type = "document"
-        elif msg.get("videoMessage"):
-            content      = msg["videoMessage"].get("caption", "")
+        elif "image" in msg_type_lower:
+            message_type = "image"
+        elif "video" in msg_type_lower:
             message_type = "video"
-        elif msg.get("buttonsResponseMessage"):
-            content      = msg["buttonsResponseMessage"].get("selectedDisplayText", "")
+        elif "document" in msg_type_lower or "pdf" in msg_type_lower:
+            message_type = "document"
+        elif "button" in msg_type_lower or "list" in msg_type_lower:
             message_type = "button_reply"
-        elif msg.get("listResponseMessage"):
-            content      = msg["listResponseMessage"].get("title", "")
-            message_type = "list_reply"
+            content = content or msg.get("buttonOrListid", "")
+
+        print(f"✅ Mensagem extraída: phone={phone} type={message_type} content={content!r}")
 
         if not content and message_type == "text":
             return  # mensagem vazia

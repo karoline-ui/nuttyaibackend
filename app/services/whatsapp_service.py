@@ -264,24 +264,33 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
     Processa webhook recebido do UazAP.
     Extrai a mensagem, salva na conversa e aciona a IA se necessário.
     """
+    import logging
+    import json
+    logger = logging.getLogger(__name__)
+
     try:
         from app.services.message_service import handle_incoming_message
+
+        # Log do payload completo para debug
+        logger.info(f"📨 Webhook recebido workspace={workspace_id} payload={json.dumps(payload)[:500]}")
 
         data    = payload.get("data", {})
         key     = data.get("key", {})
         msg     = data.get("message", {})
         event   = payload.get("event", "")
 
+        logger.info(f"📨 event={event!r} fromMe={key.get('fromMe')} remoteJid={key.get('remoteJid')} msg_keys={list(msg.keys())}")
+
         # Só processa mensagens recebidas (não enviadas pelo bot)
         if key.get("fromMe", False):
+            logger.info("⏭️ Ignorando mensagem própria")
             return
 
-        # UazAP v2 pode enviar diferentes nomes de evento — aceita qualquer um com mensagem
-        # Eventos conhecidos: "messages.upsert", "message", "MESSAGE", "messages.update"
         # Se o evento for de status/conexão, ignora
         skip_events = {"connection.update", "qrcode.updated", "presence.update",
-                       "messages.update", "message_ack", "call", "group_update"}
+                       "message_ack", "call", "group_update"}
         if event in skip_events:
+            logger.info(f"⏭️ Ignorando evento {event}")
             return
 
         # Extrair telefone do remetente

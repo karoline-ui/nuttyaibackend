@@ -223,7 +223,10 @@ async def process_scheduled_flows():
                 cron = croniter(cron_expr, now)
                 prev = cron.get_prev(datetime)
                 # Verifica se o cron bateu nos últimos 2 minutos
-                diff_seconds = (now.replace(tzinfo=None) - prev).total_seconds()
+                # Normaliza ambos para naive datetime para comparação
+                now_naive = now.replace(tzinfo=None)
+                prev_naive = prev.replace(tzinfo=None) if prev.tzinfo else prev
+                diff_seconds = (now_naive - prev_naive).total_seconds()
                 if diff_seconds > 120:
                     continue
 

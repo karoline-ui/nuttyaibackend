@@ -129,7 +129,7 @@ async def get_flow(flow_id: str, workspace_id: str):
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Flow not found")
-    return result.data
+    return result.data[0]
 
 
 @router.put("/{flow_id}")

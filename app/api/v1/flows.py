@@ -691,10 +691,17 @@ async def run_flow(
                 # time_check usa result booleano para decidir caminho
                 if not next_id and "result" in result:
                     r = result["result"]
-                    true_node  = current_node.get("data", {}).get("true_node")  or current_node.get("data", {}).get("trueNode")
-                    false_node = current_node.get("data", {}).get("false_node") or current_node.get("data", {}).get("falseNode")
-                    next_id = true_node if r else false_node
-                    print(f"🔗 time_check result={r} → next={next_id} (true={true_node} false={false_node})")
+                    # Busca nas edges: source_handle "true" ou "false"
+                    true_edges  = [e for e in edges if e.get("source") == node_id and e.get("sourceHandle") in ("true", "yes", "a", None)]
+                    false_edges = [e for e in edges if e.get("source") == node_id and e.get("sourceHandle") in ("false", "no", "b")]
+                    if not false_edges:
+                        # fallback: pega todas as edges e usa ordem
+                        all_edges = [e for e in edges if e.get("source") == node_id]
+                        true_edges  = all_edges[:1]
+                        false_edges = all_edges[1:]
+                    chosen_edges = true_edges if r else false_edges
+                    next_id = chosen_edges[0].get("target") if chosen_edges else None
+                    print(f"🔗 time_check result={r} → next={next_id} (true_edges={[e.get('target') for e in true_edges]} false_edges={[e.get('target') for e in false_edges]})")
             else:
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None

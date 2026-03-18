@@ -170,18 +170,42 @@ class WhatsAppService:
         return {"sent": sent, "failed": failed, "total": len(contacts)}
 
     # ── WEBHOOK: CONFIGURAR NA UAZAP ────────────────────────────────────────
-    async def set_webhook(self, instance: str, webhook_url: str) -> dict:
-        return await self._post(f"/webhook/set/{instance}", {
-            "url": webhook_url,
-            "webhook_by_events": False,
-            "webhook_base64": False,
-            "events": [
-                "MESSAGES_UPSERT",
-                "MESSAGES_UPDATE",
-                "CONNECTION_UPDATE",
-                "QRCODE_UPDATED",
-            ]
-        })
+    async def set_webhook(self, workspace_id: str, webhook_url: str) -> dict:
+        """Registra webhook no UazAP para o workspace — busca token da instância no banco"""
+        try:
+            supabase = get_supabase()
+            # Busca a conexão do workspace para pegar o token da instância
+            result = supabase.table("connections").select("*").eq(
+                "workspace_id", workspace_id
+            ).eq("type", "uazap").limit(1).execute()
+
+            if not result.data:
+                return {"error": "No UazAP connection found"}
+
+            conn = result.data[0]
+            config = conn.get("config", {})
+            instance_token = config.get("api_key") or config.get("token") or settings.UAZAP_API_KEY
+            instance_url = config.get("url") or settings.UAZAP_BASE_URL
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{instance_url}/webhook/set",
+                    json={
+                        "url": webhook_url,
+                        "webhook_by_events": False,
+                        "webhook_base64": False,
+                        "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+                    },
+                    headers={
+                        "Content-Type": "application/json",
+                        "token": instance_token,
+                    }
+                )
+                print(f"✅ Webhook set response: {r.status_code} {r.text[:200]}")
+                return r.json() if r.content else {"status": r.status_code}
+        except Exception as e:
+            print(f"⚠️ set_webhook error: {e}")
+            return {"error": str(e)}
 
     # ── STATUS DA INSTÂNCIA ─────────────────────────────────────────────────
     async def get_instance_status(self, instance: str) -> dict:

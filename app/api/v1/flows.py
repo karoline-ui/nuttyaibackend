@@ -619,9 +619,14 @@ async def run_flow(
             "variables": {},
         }
         
-        # Encontrar nó inicial (trigger)
-        start_nodes = [n for n in nodes if n.get("type", "").startswith("trigger.")]
+        # Encontrar nó inicial (trigger) — checa tanto type quanto data.nodeType
+        start_nodes = [n for n in nodes if 
+            n.get("type", "").startswith("trigger.") or 
+            n.get("data", {}).get("nodeType", "").startswith("trigger.")
+        ]
+        print(f"🔍 run_flow: {len(nodes)} nós, {len(edges)} edges, {len(start_nodes)} triggers")
         if not start_nodes:
+            print(f"❌ Nenhum trigger encontrado! tipos: {[n.get('type') or n.get('data',{}).get('nodeType') for n in nodes[:5]]}")
             raise ValueError("No trigger node found")
         
         # Executar nodes em sequência
@@ -679,11 +684,21 @@ async def run_flow(
                 break
             
             # Se for condição, decide próximo node
-            if current_node.get("type", "").startswith("condition."):
+            node_type_check = current_node.get("type", "") or current_node.get("data", {}).get("nodeType", "")
+            print(f"🔗 nó {node_label!r} type={node_type_check!r} result={str(result)[:100]}")
+            if node_type_check.startswith("condition."):
                 next_id = result.get("next_node_id")
+                # time_check usa result booleano para decidir caminho
+                if not next_id and "result" in result:
+                    r = result["result"]
+                    true_node  = current_node.get("data", {}).get("true_node")  or current_node.get("data", {}).get("trueNode")
+                    false_node = current_node.get("data", {}).get("false_node") or current_node.get("data", {}).get("falseNode")
+                    next_id = true_node if r else false_node
+                    print(f"🔗 time_check result={r} → next={next_id} (true={true_node} false={false_node})")
             else:
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None
+            print(f"🔗 próximo nó: {next_id!r}")
             
             if next_id:
                 current_node = next((n for n in nodes if n["id"] == next_id), None)
@@ -915,10 +930,17 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         contact = context.get("contact", {})
         message = context.get("message", {}).get("content", "") or context.get("trigger_data", {}).get("message", "")
         phone   = contact.get("phone", "")
+        print(f"🤖 ai_respond: phone={phone!r} message={message!r} simulating={context.get('_simulating')}")
         if phone and message and not context.get("_simulating"):
             response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"))
-            await whatsapp_client.send_text(phone, response_text, workspace_id)
+            print(f"🤖 ai_respond gerou: {response_text[:200]!r}")
+            result = await whatsapp_client.send_text(phone, response_text, workspace_id)
+            print(f"🤖 send_text result: {result}")
             return {"status": "ai_responded", "response": response_text[:300]}
+        if not phone:
+            print(f"❌ ai_respond: phone vazio! contact={contact}")
+        if not message:
+            print(f"❌ ai_respond: message vazio!")
         return {"status": "ai_respond_simulated"}
 
     elif node_type == "action.ai_classify":

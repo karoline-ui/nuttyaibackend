@@ -106,7 +106,7 @@ class WhatsAppService:
                 {"type": "reply", "displayText": btn, "id": f"btn_{i}"}
                 for i, btn in enumerate(buttons[:3])
             ],
-        })
+        }, workspace_id=workspace_id)
 
     # ── LISTA INTERATIVA ────────────────────────────────────────────────────
     async def send_list(self, phone: str, message: str, title: str, items: list, workspace_id: str) -> dict:
@@ -127,7 +127,7 @@ class WhatsAppService:
                     for i, item in enumerate(items[:10])
                 ]
             }]
-        })
+        }, workspace_id=workspace_id)
 
     # ── LOCALIZAÇÃO ─────────────────────────────────────────────────────────
     async def send_location(self, phone: str, lat: float, lng: float, name: str, address: str, workspace_id: str) -> dict:

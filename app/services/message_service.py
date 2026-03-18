@@ -78,6 +78,8 @@ async def handle_incoming_message(
     from app.api.v1.flows import run_flow
     supabase = get_supabase()
 
+    print(f"🔔 handle_incoming_message: ws={workspace_id} phone={phone} content={content!r}")
+
     # 1. Busca ou cria contato
     contact_result = supabase.table("contacts").select("*").eq(
         "workspace_id", workspace_id).eq("phone", phone).limit(1).execute()
@@ -208,6 +210,7 @@ async def handle_incoming_message(
     all_flows = supabase.table("flows").select("*").eq(
         "workspace_id", workspace_id
     ).eq("is_active", True).execute()
+    print(f"🔍 Flows ativos encontrados: {len(all_flows.data or [])} flows")
 
     matched_flow = None
     trigger_data = {
@@ -247,6 +250,7 @@ async def handle_incoming_message(
                     break
 
     if matched_flow:
+        print(f"✅ Flow matched: {matched_flow.get('name', matched_flow.get('id'))}")
         context = {
             "trigger_data": trigger_data,
             "contact":      {"phone": phone, "name": contact.get("name", ""), "tags": contact.get("tags", []), "id": contact_id},
@@ -262,6 +266,7 @@ async def handle_incoming_message(
         return
 
     # 6. Sem flow — usa IA diretamente
+    print(f"⚠️ Nenhum flow matched — usando IA diretamente")
     # Busca histórico recente
     history_result = supabase.table("messages").select(
         "content, direction, is_ai"

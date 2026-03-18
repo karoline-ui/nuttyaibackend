@@ -37,3 +37,5 @@ orjson==3.10.11
 websockets==13.1
 pytz>=2023.3
 croniter>=1.4.1
+PyJWT>=2.8.0
+python-dateutil>=2.8.2

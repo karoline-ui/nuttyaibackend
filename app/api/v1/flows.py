@@ -1015,16 +1015,23 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
         print(f"🤖 ai_respond: phone={phone!r} message={message[:100]!r} simulating={context.get('_simulating')}")
         if phone and message and not context.get("_simulating"):
-            conv_id = None
-            contact_id = contact.get("id")
-            if contact_id:
-                from app.services.message_service import get_conversation
-                conv = await get_conversation(workspace_id, contact_id)
-                conv_id = conv.get("id")
-            response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"), conversation_id=conv_id)
-            print(f"🤖 ai_respond gerou: {response_text[:200]!r}")
-            result = await whatsapp_client.send_text(phone, response_text, workspace_id)
-            print(f"🤖 send_text result: {result}")
+            try:
+                conv_id = None
+                contact_id = contact.get("id")
+                if contact_id:
+                    from app.services.message_service import get_conversation
+                    conv = await get_conversation(workspace_id, contact_id)
+                    conv_id = conv.get("id")
+                response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"), conversation_id=conv_id)
+                print(f"🤖 ai_respond gerou: {response_text[:200]!r}")
+                if response_text:
+                    result = await whatsapp_client.send_text(phone, response_text, workspace_id)
+                    print(f"🤖 send_text result: {result}")
+                else:
+                    print(f"❌ ai_respond: resposta vazia!")
+            except Exception as ai_err:
+                import traceback; traceback.print_exc()
+                print(f"❌ ai_respond erro: {ai_err}")
             # Salva mensagem da IA no histórico
             try:
                 from app.services.message_service import save_message

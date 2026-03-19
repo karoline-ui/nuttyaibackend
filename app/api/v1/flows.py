@@ -971,7 +971,12 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.ai_respond":
         from app.services.ai_service import generate_ai_response
         contact = context.get("contact", {})
-        raw_msg = context.get("message", {}).get("content", "") or context.get("trigger_data", {}).get("message", "")
+        # Pega o conteúdo original — raw_content preserva o dict de mídia
+        raw_msg = (
+            context.get("trigger_data", {}).get("raw_content") or
+            context.get("message", {}).get("content", "") or
+            context.get("trigger_data", {}).get("message", "")
+        )
         phone   = contact.get("phone", "")
 
         # Se o conteúdo é dict (mídia), processa com media_handler antes de passar para IA

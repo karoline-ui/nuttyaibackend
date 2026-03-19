@@ -213,9 +213,11 @@ async def handle_incoming_message(
     print(f"🔍 Flows ativos encontrados: {len(all_flows.data or [])} flows")
 
     matched_flow = None
+    # Preserva content original (pode ser dict de mídia) para o flow processar
     trigger_data = {
         "message": content, "phone": phone, "type": message_type,
-        "contact_id": contact_id, "is_new_contact": False
+        "contact_id": contact_id, "is_new_contact": False,
+        "raw_content": content,  # dict original da mídia se for imagem/audio/doc
     }
 
     if all_flows.data:

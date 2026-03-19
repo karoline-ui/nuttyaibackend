@@ -66,7 +66,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             
             result = supabase.table("appointments").insert({
                 "workspace_id": workspace_id,
-                "contact_id": contact.data["id"],
+                "contact_id": contact.data[0]["id"],
                 "title": title,
                 "start_time": start_datetime,
                 "end_time": end_datetime,
@@ -260,7 +260,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             
             supabase.table("reminders").insert({
                 "workspace_id": workspace_id,
-                "contact_id": contact.data["id"] if contact.data else None,
+                "contact_id": contact.data[0]["id"] if contact.data else None,
                 "message": message,
                 "scheduled_at": scheduled_at,
                 "status": "pending"

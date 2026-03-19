@@ -22,7 +22,7 @@ import json
 from app.core.config import settings
 from app.core.database import get_supabase
 
-# Gemini configurado por workspace — não global
+# Gemini configurado por workspace - não global
 def get_workspace_llm(api_key: str = None):
     """Cria LLM com a chave do workspace ou a global como fallback"""
     key = api_key or settings.GEMINI_API_KEY
@@ -341,28 +341,36 @@ async def process_message(
         import google.generativeai as _genai
         _genai.configure(api_key=ws_api_key)
     
+    # Carrega knowledge_base do workspace
+    kb_content = ""
+    try:
+        kb = supabase_client.table("knowledge_base").select("title, content").eq(
+            "workspace_id", workspace_id).eq("is_active", True).execute()
+        if kb.data:
+            kb_parts = ["## " + r["title"] + "\n" + r["content"] for r in kb.data]
+            kb_content = "\n\n".join(kb_parts)
+        print(f"[KB] {len(kb.data if kb.data else [])} registros, {len(kb_content)} chars")
+    except Exception as kb_err:
+        print(f"[KB] erro: {kb_err}")
+
+    weekday_pt = ["segunda-feira","terca-feira","quarta-feira","quinta-feira","sexta-feira","sabado","domingo"][datetime.now().weekday()]
+    kb_block = ("\n\nBASE DE CONHECIMENTO (use sempre para precos e servicos):\n" + kb_content) if kb_content else ""
+
     # Construir system prompt contextual
-    system_prompt = f"""Você é {persona_name}, assistente de atendimento inteligente.
-    
-Segmento: {segment}
-Data/hora atual: {datetime.now().strftime('%d/%m/%Y %H:%M')}
-
-{instructions}
-
-REGRAS IMPORTANTES:
-- Responda sempre em português brasileiro
-- Seja cordial, profissional e empático
-- Use as ferramentas disponíveis quando necessário
-- Sempre que souber o nome do cliente, chame update_contact_info para salvar
-- Sempre que souber o nome do pet, chame update_contact_info com notes contendo o pet
-- Para agendar: sempre confirme data, hora e serviço antes
-- Para cancelar: confirme o agendamento antes de cancelar
-- Não invente informações — use a base de conhecimento
-- Se não souber algo, diga que vai verificar
-- Mensagens curtas e objetivas (máximo 3 parágrafos)
-- Não use markdown em mensagens (WhatsApp usa *negrito*, _itálico_)
-"""
-    
+    system_prompt = (
+        "Voce e " + persona_name + ", assistente de atendimento.\n"
+        "Segmento: " + segment + "\n"
+        "Data/hora: " + datetime.now().strftime("%d/%m/%Y %H:%M") + " (" + weekday_pt + ")\n\n"
+        + instructions
+        + kb_block
+        + "\n\nREGRAS:\n"
+        "- Responda em portugues\n"
+        "- Para precos e servicos: use SEMPRE a BASE DE CONHECIMENTO acima\n"
+        "- NUNCA diga que nao tem acesso a precos - eles estao na base acima\n"
+        "- Sempre que souber o nome do cliente, chame update_contact_info\n"
+        "- NUNCA invente valores\n"
+        "- Nao use markdown\n"
+    )
     # Preparar conteúdo da mensagem
     if message_type in ["audio", "video"] and media_data:
         # Transcrição via Gemini Vision
@@ -520,7 +528,7 @@ async def generate_ai_response(
     context_override: str = None,
     conversation_id: str = None,
 ) -> str:
-    """Gera resposta da IA para uma mensagem — usado pelo flow action.ai_respond"""
+    """Gera resposta da IA para uma mensagem - usado pelo flow action.ai_respond"""
     from app.core.database import get_supabase
     supabase = get_supabase()
 

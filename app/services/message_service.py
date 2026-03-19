@@ -48,7 +48,7 @@ async def save_message(workspace_id: str, conversation_id: str, msg_data: dict) 
         content = "📄 Documento"
 
     supabase.table("conversations").update({
-        "last_message": str(content)[:100] if content else "",
+        "last_message": str(content)[:300] if content else "",
         "last_message_at": datetime.now().isoformat(),
     }).eq("id", conversation_id).execute()
 

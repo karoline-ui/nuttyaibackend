@@ -904,6 +904,31 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
             print(f"❌ send_text: message vazio! config={config}")
         return {"status": "sent", "to": phone, "message": message[:200]}
 
+    elif node_type == "action.send_whatsapp_notification":
+        # Envia notificação para o número configurado no workspace (notification_phone)
+        from app.core.database import get_supabase as _get_sb
+        _sb = _get_sb()
+        _ws = _sb.table("workspaces").select("notification_phone, name").eq(
+            "id", workspace_id).limit(1).execute()
+        _ws_data = _ws.data[0] if _ws.data else {}
+        notif_phone = _ws_data.get("notification_phone", "")
+        ws_name = _ws_data.get("name", "Sistema")
+        contact = context.get("contact", {})
+
+        if notif_phone and not context.get("_simulating"):
+            msg_template = config.get("message", "")
+            # Substitui variáveis
+            msg_template = msg_template.replace("{{workspace.notification_phone}}", notif_phone)
+            msg_template = msg_template.replace("{{workspace.name}}", ws_name)
+            msg_template = msg_template.replace("{{contact.name}}", contact.get("name", contact.get("phone", "")))
+            msg_template = msg_template.replace("{{contact.phone}}", contact.get("phone", ""))
+            msg_template = msg_template.replace("{{contact.notes}}", contact.get("notes", ""))
+            print(f"📣 send_whatsapp_notification → {notif_phone}: {msg_template[:80]!r}")
+            await whatsapp_client.send_text(notif_phone, msg_template, workspace_id)
+        elif not notif_phone:
+            print(f"⚠️ notification_phone não configurado no workspace")
+        return {"status": "notification_sent", "to": notif_phone}
+
     elif node_type == "action.send_image":
         phone = config.get("to", "") or context.get("contact", {}).get("phone", "")
         if phone and config.get("media_url") and not context.get("_simulating"):

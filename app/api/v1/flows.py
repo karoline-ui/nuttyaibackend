@@ -979,8 +979,8 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         )
         phone   = contact.get("phone", "")
 
-        # Se o conteúdo é dict (mídia), processa com media_handler antes de passar para IA
-        if isinstance(raw_msg, dict):
+        # Se o conteúdo é dict de mídia válido (tem URL ou mediaKey)
+        if isinstance(raw_msg, dict) and (raw_msg.get("URL") or raw_msg.get("url") or raw_msg.get("mediaKey")):
             try:
                 from app.services.whatsapp_media import media_handler as _mh
                 # Detecta tipo pela mimetype do próprio dict

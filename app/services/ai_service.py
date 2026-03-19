@@ -56,6 +56,19 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         start_datetime e end_datetime no formato ISO 8601: 2025-12-01T10:00:00
         """
         try:
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            # Converte horário de Fortaleza (UTC-3) para UTC para salvar no banco
+            def to_utc(dt_str):
+                try:
+                    dt = _dt.fromisoformat(dt_str)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz(_td(hours=-3)))
+                    return dt.astimezone(_tz.utc).isoformat()
+                except:
+                    return dt_str
+            start_utc = to_utc(start_datetime)
+            end_utc = to_utc(end_datetime)
+
             # Buscar contact_id pelo phone
             contact = supabase.table("contacts").select("id").eq(
                 "workspace_id", workspace_id
@@ -68,8 +81,8 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
                 "workspace_id": workspace_id,
                 "contact_id": contact.data[0]["id"],
                 "title": title,
-                "start_time": start_datetime,
-                "end_time": end_datetime,
+                "start_time": start_utc,
+                "end_time": end_utc,
                 "professional": professional,
                 "service_type": service_type,
                 "notes": notes,
@@ -340,6 +353,8 @@ REGRAS IMPORTANTES:
 - Responda sempre em português brasileiro
 - Seja cordial, profissional e empático
 - Use as ferramentas disponíveis quando necessário
+- Sempre que souber o nome do cliente, chame update_contact_info para salvar
+- Sempre que souber o nome do pet, chame update_contact_info com notes contendo o pet
 - Para agendar: sempre confirme data, hora e serviço antes
 - Para cancelar: confirme o agendamento antes de cancelar
 - Não invente informações — use a base de conhecimento

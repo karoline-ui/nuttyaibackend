@@ -63,6 +63,7 @@ async def handle_incoming_message(
     media_data: bytes = None,
     media_mime: str = None,
     raw_payload: dict = None,
+    raw_media_dict: dict = None,
 ):
     """
     Ponto central de entrada de mensagens reais do WhatsApp.
@@ -217,7 +218,7 @@ async def handle_incoming_message(
     trigger_data = {
         "message": content, "phone": phone, "type": message_type,
         "contact_id": contact_id, "is_new_contact": False,
-        "raw_content": content,  # dict original da mídia se for imagem/audio/doc
+        "raw_media_dict": raw_media_dict,  # dict original da mídia (imagem/audio/doc)
     }
 
     if all_flows.data:

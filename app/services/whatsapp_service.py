@@ -260,17 +260,17 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
             return
 
         # Extrair conteúdo — UazAP v2 usa message.content diretamente
-        content      = msg.get("content", "") or msg.get("body", "") or msg.get("text", "")
+        raw_content  = msg.get("content", "") or msg.get("body", "") or msg.get("text", "")
         message_type = "text"
         media_data   = None
         media_mime   = None
 
-        msg_type = msg.get("type", "") or msg.get("messageType", "") or msg.get("wa_lastMessageType", "")
+        msg_type = msg.get("type", "") or msg.get("messageType", "") or chat.get("wa_lastMessageType", "")
         msg_type_lower = msg_type.lower()
 
-        if "audio" in msg_type_lower:
+        if "audio" in msg_type_lower or "ptt" in msg_type_lower:
             message_type = "audio"
-        elif "image" in msg_type_lower:
+        elif "image" in msg_type_lower or "sticker" in msg_type_lower:
             message_type = "image"
         elif "video" in msg_type_lower:
             message_type = "video"
@@ -278,22 +278,43 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
             message_type = "document"
         elif "button" in msg_type_lower or "list" in msg_type_lower:
             message_type = "button_reply"
+
+        # Se content é dict, é mídia — processar com media_handler
+        content = ""
+        if isinstance(raw_content, dict):
+            try:
+                from app.services.media_handler import media_handler
+                caption = raw_content.get("caption", "") or msg.get("buttonOrListid", "")
+                content = await media_handler.process_media(message_type, raw_content, caption)
+                print(f"✅ Mídia processada: type={message_type} content={content[:100]!r}")
+            except Exception as me:
+                print(f"⚠️ media_handler error: {me}")
+                content = f"[Cliente enviou {message_type}]"
+        else:
+            content = str(raw_content) if raw_content else ""
+
+        if message_type == "button_reply":
             content = content or msg.get("buttonOrListid", "")
 
-        print(f"✅ Mensagem extraída: phone={phone} type={message_type} content={content!r}")
+        # Preserva dict original de mídia antes de converter para string
+        raw_media_dict = content if isinstance(content, dict) else None
+        content_str = str(content)[:200] if isinstance(content, dict) else (content or "")
 
-        if not content and message_type == "text":
+        print(f"✅ Mensagem extraída: phone={phone} type={message_type} content={content_str[:80]!r}")
+
+        if not content_str and message_type == "text":
             return  # mensagem vazia
 
         # Delegar ao message_service
         await handle_incoming_message(
-            workspace_id = workspace_id,
-            phone        = phone,
-            content      = content,
-            message_type = message_type,
-            media_data   = media_data,
-            media_mime   = media_mime,
-            raw_payload  = payload,
+            workspace_id   = workspace_id,
+            phone          = phone,
+            content        = content_str,
+            message_type   = message_type,
+            media_data     = media_data,
+            media_mime     = media_mime,
+            raw_payload    = payload,
+            raw_media_dict = raw_media_dict,
         )
 
     except Exception as e:

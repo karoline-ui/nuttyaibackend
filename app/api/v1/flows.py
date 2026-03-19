@@ -978,11 +978,29 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         if isinstance(raw_msg, dict):
             try:
                 from app.services.whatsapp_media import media_handler as _mh
-                msg_type = context.get("message", {}).get("type", "image")
-                caption  = raw_msg.get("caption", "")
-                message  = await _mh.process_media(msg_type, raw_msg, caption)
-                print(f"🤖 mídia processada para IA: {message[:100]!r}")
+                # Detecta tipo pela mimetype do próprio dict
+                mimetype = raw_msg.get("mimetype", "")
+                if "image" in mimetype or "jpeg" in mimetype or "png" in mimetype:
+                    msg_type = "image"
+                elif "audio" in mimetype or "ogg" in mimetype or "mp4" in mimetype:
+                    msg_type = "audio"
+                elif "pdf" in mimetype or "document" in mimetype:
+                    msg_type = "document"
+                else:
+                    # fallback pelo wa_lastMessageType do chat
+                    wa_type = context.get("trigger_data", {}).get("wa_lastMessageType", "") or ""
+                    if "Image" in wa_type:
+                        msg_type = "image"
+                    elif "Audio" in wa_type or "Ptt" in wa_type:
+                        msg_type = "audio"
+                    else:
+                        msg_type = "image"
+                caption = raw_msg.get("caption", "")
+                print(f"🤖 processando mídia tipo={msg_type} mimetype={mimetype}")
+                message = await _mh.process_media(msg_type, raw_msg, caption)
+                print(f"🤖 mídia processada: {message[:100]!r}")
             except Exception as me:
+                import traceback; traceback.print_exc()
                 print(f"⚠️ whatsapp_media error: {me}")
                 message = "[Cliente enviou uma mídia]"
         else:

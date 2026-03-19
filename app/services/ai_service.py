@@ -283,6 +283,72 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         except Exception as e:
             return f"❌ Erro: {str(e)}"
 
+
+    @tool
+    def notify_doctor(subject: str, message: str) -> str:
+        """
+        Notifica o medico responsavel via WhatsApp.
+        Use quando cliente mencionar medicamentos ou duvidas sobre tratamento.
+        subject: assunto resumido. message: mensagem com dados do cliente.
+        """
+        try:
+            import asyncio
+            ws_info = supabase.table("workspaces").select("notification_phone, name").eq(
+                "id", workspace_id).limit(1).execute()
+            notif_phone = (ws_info.data[0] if ws_info.data else {}).get("notification_phone", "")
+            if not notif_phone:
+                return "Numero de notificacao nao configurado no workspace"
+            ct = supabase.table("contacts").select("name").eq(
+                "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+            cname = (ct.data[0] if ct.data else {}).get("name", contact_phone)
+            parts = ["[Notificacao - " + (ws_info.data[0] if ws_info.data else {}).get("name", "Sistema") + "]",
+                     "Assunto: " + subject,
+                     "Cliente: " + cname + " (" + contact_phone + ")",
+                     "",
+                     message]
+            full_msg = "\n".join(parts)
+            from app.services.whatsapp_service import WhatsAppClient
+            wc = WhatsAppClient(workspace_id)
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(wc.send_text(notif_phone, full_msg, workspace_id))
+            loop.close()
+            return "Medico notificado com sucesso sobre: " + subject
+        except Exception as e:
+            return "Erro ao notificar medico: " + str(e)
+
+    @tool
+    def transfer_to_human(reason: str = "") -> str:
+        """
+        Transfere o atendimento para um humano e pausa a IA.
+        Use quando cliente pedir para falar com atendente humano.
+        """
+        try:
+            import asyncio
+            ws_info = supabase.table("workspaces").select("notification_phone, name").eq(
+                "id", workspace_id).limit(1).execute()
+            notif_phone = (ws_info.data[0] if ws_info.data else {}).get("notification_phone", "")
+            ct = supabase.table("contacts").select("name").eq(
+                "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+            cname = (ct.data[0] if ct.data else {}).get("name", contact_phone)
+            conv = supabase.table("conversations").select("id").eq(
+                "workspace_id", workspace_id).eq("contact_phone", contact_phone).limit(1).execute()
+            if conv.data:
+                supabase.table("conversations").update({"ai_status": "paused"}).eq(
+                    "id", conv.data[0]["id"]).execute()
+            if notif_phone:
+                parts = ["[Transferencia para Humano - " + (ws_info.data[0] if ws_info.data else {}).get("name", "Sistema") + "]",
+                         "Cliente: " + cname + " (" + contact_phone + ")",
+                         "Motivo: " + (reason or "Solicitou atendente humano")]
+                msg = "\n".join(parts)
+                from app.services.whatsapp_service import WhatsAppClient
+                wc = WhatsAppClient(workspace_id)
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(wc.send_text(notif_phone, msg, workspace_id))
+                loop.close()
+            return "transferencia_humano"
+        except Exception as e:
+            return "Erro na transferencia: " + str(e)
+
     return [
         schedule_appointment,
         get_available_slots,
@@ -293,6 +359,8 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         search_knowledge_base,
         get_next_available_slots,
         create_reminder,
+        notify_doctor,
+        transfer_to_human,
     ]
 
 

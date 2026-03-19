@@ -977,13 +977,13 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         # Se o conteúdo é dict (mídia), processa com media_handler antes de passar para IA
         if isinstance(raw_msg, dict):
             try:
-                from app.services.media_handler import media_handler
+                from app.services.whatsapp_media import media_handler as _mh
                 msg_type = context.get("message", {}).get("type", "image")
                 caption  = raw_msg.get("caption", "")
-                message  = await media_handler.process_media(msg_type, raw_msg, caption)
+                message  = await _mh.process_media(msg_type, raw_msg, caption)
                 print(f"🤖 mídia processada para IA: {message[:100]!r}")
             except Exception as me:
-                print(f"⚠️ media_handler error: {me}")
+                print(f"⚠️ whatsapp_media error: {me}")
                 message = "[Cliente enviou uma mídia]"
         else:
             message = str(raw_msg) if raw_msg else ""

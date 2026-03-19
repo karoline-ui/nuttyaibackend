@@ -973,7 +973,9 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         contact = context.get("contact", {})
         # Pega conteúdo: raw_media_dict para mídia, texto simples para texto
         raw_media = context.get("trigger_data", {}).get("raw_media_dict")
-        raw_msg = raw_media or context.get("trigger_data", {}).get("message", "")
+        _td_msg = context.get("trigger_data", {}).get("message", "")
+        raw_msg = raw_media if raw_media else (_td_msg if _td_msg else "")
+        print(f"🔑 raw_media={type(raw_media).__name__} td_msg={_td_msg!r} raw_msg={str(raw_msg)[:60]!r}")
         phone   = contact.get("phone", "")
 
         # Se o conteúdo é dict de mídia válido (tem URL ou mediaKey)

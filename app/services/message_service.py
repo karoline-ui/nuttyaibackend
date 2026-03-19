@@ -48,7 +48,7 @@ async def save_message(workspace_id: str, conversation_id: str, msg_data: dict) 
         content = "📄 Documento"
 
     supabase.table("conversations").update({
-        "last_message": content[:100] if content else "",
+        "last_message": str(content)[:100] if content else "",
         "last_message_at": datetime.now().isoformat(),
     }).eq("id", conversation_id).execute()
 
@@ -115,7 +115,7 @@ async def handle_incoming_message(
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
         "direction":    "inbound",
-        "content":      content or f"[{message_type}]",
+        "content":      str(content)[:1000] if content else f"[{message_type}]",
         "type":         message_type,
         "is_ai":        False,
         "created_at":   datetime.now().isoformat(),

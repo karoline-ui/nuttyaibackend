@@ -1,334 +1,339 @@
 """
-app/services/whatsapp_service.py
-Serviço UazAP (WhatsApp API v2) — payloads corretos conforme documentação
+Nutty.AI v6.1 — Media Handler
+Mídia WhatsApp é criptografada E2E. Processo:
+1. Baixa arquivo criptografado da URL (mmg.whatsapp.net)
+2. Descriptografa com mediaKey usando HKDF + AES-256-CBC
+3. Envia bytes limpos para Gemini (visão/áudio) ou PyMuPDF (PDF)
+
+v6.1: Suporte Gemini API (era só OpenRouter). Usa Gemini se GEMINI_API_KEY
+disponível, senão fallback OpenRouter.
 """
+import base64
 import httpx
-import asyncio
-from typing import Optional
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+from typing import Optional, Tuple
+
 from app.core.config import settings
-from app.core.database import get_supabase
+
+# Provider detection
+GEMINI_API_KEY = getattr(settings, "GEMINI_API_KEY", "") or ""
+GEMINI_MODEL = getattr(settings, "GEMINI_MODEL", "") or "gemini-2.5-flash"
+OPENROUTER_API_KEY = ""
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+VISION_MODEL = ""
+
+USE_GEMINI = bool(GEMINI_API_KEY)
+
+# WhatsApp media HKDF info strings
+MEDIA_HKDF_INFO = {
+    "image": b"WhatsApp Image Keys",
+    "sticker": b"WhatsApp Image Keys",
+    "ptt": b"WhatsApp Audio Keys",
+    "audio": b"WhatsApp Audio Keys",
+    "video": b"WhatsApp Video Keys",
+    "document": b"WhatsApp Document Keys",
+}
 
 
-class WhatsAppService:
+def _decrypt_whatsapp_media(encrypted_data: bytes, media_key_b64: str, media_type: str) -> bytes:
+    """Descriptografa mídia WhatsApp E2E."""
+    media_key = base64.b64decode(media_key_b64)
+    info = MEDIA_HKDF_INFO.get(media_type, b"WhatsApp Image Keys")
 
-    async def _get_connection(self, workspace_id: str) -> dict:
-        """Busca a conexão UazAP ativa do workspace — retorna {url, api_key}"""
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=112,
+        salt=None,
+        info=info,
+        backend=default_backend(),
+    )
+    expanded = hkdf.derive(media_key)
+
+    iv = expanded[:16]
+    cipher_key = expanded[16:48]
+
+    file_data = encrypted_data[:-10]
+
+    cipher = Cipher(algorithms.AES(cipher_key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    decrypted = decryptor.update(file_data) + decryptor.finalize()
+
+    if decrypted:
+        pad_len = decrypted[-1]
+        if 0 < pad_len <= 16 and all(b == pad_len for b in decrypted[-pad_len:]):
+            decrypted = decrypted[:-pad_len]
+
+    return decrypted
+
+
+class MediaHandler:
+    def __init__(self):
+        self.use_gemini = USE_GEMINI
+        self.gemini_key = GEMINI_API_KEY
+        self.gemini_model = GEMINI_MODEL
+        self.openrouter_key = OPENROUTER_API_KEY
+        print(f"[Media] Provider: {'GEMINI' if self.use_gemini else 'OPENROUTER'}")
+
+    async def download_encrypted(self, url: str) -> Optional[bytes]:
+        """Baixa arquivo criptografado do WhatsApp."""
+        if not url:
+            return None
         try:
-            supabase = get_supabase()
-            result = supabase.table("connections").select("config, is_active").eq(
-                "workspace_id", workspace_id
-            ).eq("type", "uazap").limit(1).execute()
-            if result.data:
-                config = result.data[0].get("config", {}) or {}
-                return {
-                    "url": config.get("endpoint") or config.get("url") or settings.UAZAP_BASE_URL,
-                    "api_key": config.get("api_key") or settings.UAZAP_API_KEY,
-                }
+            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    print(f"[Media] Downloaded: {len(resp.content)} bytes")
+                    return resp.content
+                print(f"[Media] Download failed: {resp.status_code}")
+                return None
         except Exception as e:
-            print(f"⚠️ _get_connection error: {e}")
-        return {
-            "url": settings.UAZAP_BASE_URL,
-            "api_key": settings.UAZAP_API_KEY,
+            print(f"[Media] Download error: {e}")
+            return None
+
+    async def decrypt_media(self, content_dict: dict, media_type: str) -> Tuple[Optional[bytes], str]:
+        """Baixa e descriptografa mídia WhatsApp."""
+        url = content_dict.get("URL") or content_dict.get("url", "")
+        media_key = content_dict.get("mediaKey") or content_dict.get("MediaKey", "")
+        mimetype = content_dict.get("mimetype") or content_dict.get("Mimetype", "")
+
+        if not url or not media_key:
+            print(f"[Media] Missing URL or mediaKey")
+            return None, ""
+
+        encrypted = await self.download_encrypted(url)
+        if not encrypted:
+            return None, ""
+
+        try:
+            decrypted = _decrypt_whatsapp_media(encrypted, media_key, media_type)
+            print(f"[Media] Decrypted: {len(decrypted)} bytes, mime={mimetype}")
+            return decrypted, mimetype or "application/octet-stream"
+        except Exception as e:
+            print(f"[Media] Decrypt error: {e}")
+            import traceback; traceback.print_exc()
+            return None, ""
+
+    # ============================================================
+    # GEMINI API calls
+    # ============================================================
+
+    async def _gemini_vision(self, image_bytes: bytes, mimetype: str, prompt: str) -> str:
+        """Envia imagem para Gemini API."""
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        if "png" in mimetype:
+            mime = "image/png"
+        elif "webp" in mimetype:
+            mime = "image/webp"
+        else:
+            mime = "image/jpeg"
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_key}"
+
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"inlineData": {"mimeType": mime, "data": b64}},
+                    {"text": prompt},
+                ]
+            }],
+            "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.2},
         }
 
-    async def _post(self, endpoint: str, payload: dict, workspace_id: str = None) -> dict:
-        """Helper: faz POST autenticado na UazAP usando config do workspace"""
-        try:
-            conn = await self._get_connection(workspace_id) if workspace_id else {
-                "url": settings.UAZAP_BASE_URL,
-                "api_key": settings.UAZAP_API_KEY,
-            }
-            print(f"📤 POST {conn['url']}{endpoint}")
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.post(
-                    f"{conn['url']}{endpoint}",
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "token": conn["api_key"],
-                    }
-                )
-                print(f"📤 Response {r.status_code}: {r.text[:200]}")
-                return r.json() if r.content else {"status": r.status_code}
-        except Exception as e:
-            print(f"❌ _post error: {e}")
-            return {"error": str(e)}
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                return parts[0].get("text", "") if parts else ""
+            print(f"[Media] Gemini vision error {resp.status_code}: {resp.text[:200]}")
+            return ""
 
-    # ── TEXTO ───────────────────────────────────────────────────────────────
-    async def send_text(self, phone: str, message: str, workspace_id: str) -> dict:
-        """Envia mensagem de texto simples"""
-        print(f"📤 send_text: phone={phone} workspace={workspace_id} msg={message[:80]!r}")
-        result = await self._post("/send/text", {
-            "number": phone,
-            "text": message,
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-        print(f"📤 send_text result: {result}")
-        return result
+    async def _gemini_audio(self, audio_bytes: bytes, mimetype: str, prompt: str) -> str:
+        """Envia áudio para Gemini API."""
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-    # ── IMAGEM ──────────────────────────────────────────────────────────────
-    async def send_image(self, phone: str, url: str, caption: str, workspace_id: str) -> dict:
-        return await self._post("/send/media", {
-            "number": phone,
-            "type": "image",
-            "file": url,
-            "text": caption,
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── ÁUDIO ───────────────────────────────────────────────────────────────
-    async def send_audio(self, phone: str, url: str, workspace_id: str) -> dict:
-        return await self._post("/send/media", {
-            "number": phone,
-            "type": "ptt",
-            "file": url,
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── DOCUMENTO ───────────────────────────────────────────────────────────
-    async def send_document(self, phone: str, url: str, filename: str, workspace_id: str) -> dict:
-        return await self._post("/send/media", {
-            "number": phone,
-            "type": "document",
-            "file": url,
-            "docName": filename,
-            "text": filename,
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── BOTÕES RÁPIDOS (até 3) ───────────────────────────────────────────────
-    async def send_buttons(self, phone: str, message: str, buttons: list, workspace_id: str) -> dict:
-        """
-        Envia mensagem com botões interativos (reply buttons).
-        Payload UazAP v2 / Evolution API padrão.
-        """
-        return await self._post("/send/menu", {
-            "number": phone,
-            "type": "button",
-            "text": message,
-            "choices": [f"{btn}|btn_{i}" for i, btn in enumerate(buttons[:3])],
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── LISTA INTERATIVA ────────────────────────────────────────────────────
-    async def send_list(self, phone: str, message: str, title: str, items: list, workspace_id: str) -> dict:
-        """
-        Envia lista interativa nativa do WhatsApp.
-        Agrupa tudo numa seção única.
-        """
-        choices = [f"[{title}]"] + [f"{item}|row_{i}" for i, item in enumerate(items[:10])]
-        return await self._post("/send/menu", {
-            "number": phone,
-            "type": "list",
-            "text": message,
-            "choices": choices,
-            "listButton": "Ver opções",
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── LOCALIZAÇÃO ─────────────────────────────────────────────────────────
-    async def send_location(self, phone: str, lat: float, lng: float, name: str, address: str, workspace_id: str) -> dict:
-        return await self._post("/send/location", {
-            "number": phone,
-            "lat": lat,
-            "lng": lng,
-            "name": name,
-            "address": address,
-            "delay": 1000,
-        }, workspace_id=workspace_id)
-
-    # ── DISPARO EM MASSA ────────────────────────────────────────────────────
-    async def send_bulk_with_delay(
-        self,
-        contacts: list,
-        message: str,
-        workspace_id: str,
-        delay_ms: int = 3500,
-    ) -> dict:
-        """Envia mensagem para múltiplos contatos com delay anti-ban"""
-        sent, failed = 0, 0
-        for contact in contacts:
-            phone = contact.get("phone", "")
-            if not phone:
-                continue
-            personal = message.replace("{{contact.name}}", contact.get("name", ""))
-            result = await self.send_text(phone, personal, workspace_id)
-            if result.get("error"):
-                failed += 1
-            else:
-                sent += 1
-            await asyncio.sleep(delay_ms / 1000)
-        return {"sent": sent, "failed": failed, "total": len(contacts)}
-
-    # ── WEBHOOK: CONFIGURAR NA UAZAP ────────────────────────────────────────
-    async def set_webhook(self, workspace_id: str, webhook_url: str) -> dict:
-        """POST /webhook — modo simples, cria ou atualiza webhook único da instância"""
-        try:
-            conn = await self._get_connection(workspace_id)
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.post(
-                    f"{conn['url']}/webhook",
-                    json={
-                        "url": webhook_url,
-                        "events": ["messages"],
-                        "excludeMessages": ["wasSentByApi"],
-                    },
-                    headers={
-                        "Content-Type": "application/json",
-                        "token": conn["api_key"],
-                    }
-                )
-                print(f"✅ Webhook configurado: {r.status_code} {r.text[:200]}")
-                return r.json() if r.content else {"status": r.status_code}
-        except Exception as e:
-            print(f"⚠️ set_webhook error: {e}")
-            return {"error": str(e)}
-
-    # ── STATUS DA INSTÂNCIA ─────────────────────────────────────────────────
-    async def get_status(self, workspace_id: str) -> dict:
-        """GET /instance/status — retorna status da conexão"""
-        try:
-            conn = await self._get_connection(workspace_id)
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    f"{conn['url']}/instance/status",
-                    headers={"token": conn["api_key"]}
-                )
-                data = r.json()
-                return {"connected": data.get("status") == "connected", "state": data.get("status"), **data}
-        except Exception as e:
-            return {"error": str(e), "connected": False}
-
-    # ── QR CODE / CONNECT ────────────────────────────────────────────────────
-    async def get_qrcode(self, workspace_id: str) -> dict:
-        """POST /instance/connect — gera QR code para conexão"""
-        try:
-            conn = await self._get_connection(workspace_id)
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.post(
-                    f"{conn['url']}/instance/connect",
-                    json={},
-                    headers={"token": conn["api_key"], "Content-Type": "application/json"}
-                )
-                return r.json()
-        except Exception as e:
-            return {"error": str(e)}
-
-
-whatsapp_client = WhatsAppService()
-
-
-async def process_incoming_webhook(payload: dict, workspace_id: str):
-    """
-    Processa webhook recebido do UazAP v2.
-    Estrutura: { EventType, message: {content, chatid, fromMe}, chat: {phone} }
-    """
-    try:
-        from app.services.message_service import handle_incoming_message
-
-        # ── UazAP v2 format ──────────────────────────────────────────────
-        event_type = payload.get("EventType", "") or payload.get("event", "")
-        msg        = payload.get("message", {})
-        chat       = payload.get("chat", {})
-
-        # Ignorar eventos que não são mensagens
-        if event_type not in ("messages", "message", "messages.upsert", ""):
-            skip = {"connection", "qrcode", "presence", "ack", "call", "group"}
-            if any(s in event_type.lower() for s in skip):
-                print(f"⏭️ Ignorando evento {event_type!r}")
-                return
-
-        # Ignorar mensagens enviadas pelo bot
-        from_me = msg.get("fromMe", False) or msg.get("from_me", False)
-        if from_me:
-            print(f"⏭️ Ignorando fromMe")
-            return
-
-        # Extrair telefone — UazAP v2 usa chatid ou chat.phone
-        chat_id = msg.get("chatid", "") or chat.get("wa_chatid", "")
-        phone = chat_id.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "")
-        if not phone:
-            # fallback: chat.phone
-            phone = chat.get("phone", "").replace("+", "").replace(" ", "").replace("-", "")
-        if not phone:
-            print(f"⚠️ Sem telefone no payload")
-            return
-
-        # Ignorar grupos
-        if "@g.us" in chat_id or chat.get("wa_isGroup", False):
-            print(f"⏭️ Ignorando grupo {chat_id}")
-            return
-
-        # Extrair conteúdo — UazAP v2 usa message.content diretamente
-        raw_content  = msg.get("content", "") or msg.get("body", "") or msg.get("text", "")
-        message_type = "text"
-        media_data   = None
-        media_mime   = None
-
-        # Se content é dict, é sempre mídia — transcreve aqui mesmo
-        if isinstance(raw_content, dict):
-            mime = raw_content.get("mimetype", "")
-            if "audio" in mime or "ogg" in mime or "opus" in mime:
-                message_type = "audio"
-            elif "video" in mime or "mp4" in mime:
-                message_type = "video"
-            elif "pdf" in mime:
-                message_type = "document"
-            else:
-                message_type = "image"
-            caption = raw_content.get("caption", "")
-            # Transcreve mídia aqui — chega como texto para o flow
-            try:
-                from app.services.whatsapp_media import media_handler as _mh
-                transcribed = await _mh.process_media(message_type, raw_content, caption)
-                content = transcribed
-                print(f"✅ Mídia transcrita: {content[:100]!r}")
-            except Exception as me:
-                print(f"⚠️ Transcrição error: {me}")
-                content = caption or f"[{message_type}]"
-            raw_media_dict_pre = raw_content
+        # Gemini aceita vários mimetypes de áudio
+        if "ogg" in mimetype or "opus" in mimetype:
+            mime = "audio/ogg"
+        elif "mp4" in mimetype or "m4a" in mimetype:
+            mime = "audio/mp4"
+        elif "mpeg" in mimetype or "mp3" in mimetype:
+            mime = "audio/mpeg"
+        elif "wav" in mimetype:
+            mime = "audio/wav"
         else:
-            msg_type = msg.get("type", "") or msg.get("messageType", "") or chat.get("wa_lastMessageType", "")
-            msg_type_lower = msg_type.lower()
-            if "audio" in msg_type_lower or "ptt" in msg_type_lower:
-                message_type = "audio"
-            elif "image" in msg_type_lower or "sticker" in msg_type_lower:
-                message_type = "image"
-            elif "video" in msg_type_lower:
-                message_type = "video"
-            elif "document" in msg_type_lower or "pdf" in msg_type_lower:
-                message_type = "document"
-            elif "button" in msg_type_lower or "list" in msg_type_lower:
-                message_type = "button_reply"
-            content = str(raw_content) if raw_content else ""
-            raw_media_dict_pre = None
+            mime = "audio/ogg"
 
-        print(f"🔍 message_type={message_type} is_media={raw_media_dict_pre is not None}")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_key}"
 
-        if message_type == "button_reply":
-            content = content or msg.get("buttonOrListid", "")
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"inlineData": {"mimeType": mime, "data": b64}},
+                    {"text": prompt},
+                ]
+            }],
+            "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.1},
+        }
 
-        # raw_media_dict já foi preservado antes
-        raw_media_dict = raw_media_dict_pre
-        content_str = content or ""
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                return parts[0].get("text", "") if parts else ""
+            print(f"[Media] Gemini audio error {resp.status_code}: {resp.text[:200]}")
+            return ""
 
-        print(f"✅ Mensagem extraída: phone={phone} type={message_type} content={content_str[:80]!r}")
+    # ============================================================
+    # OPENROUTER API calls (fallback)
+    # ============================================================
 
-        if not content_str and message_type == "text":
-            return  # mensagem vazia
+    async def _openrouter_vision(self, image_bytes: bytes, mimetype: str, prompt: str) -> str:
+        """Envia imagem para OpenRouter."""
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        if "png" in mimetype:
+            mime = "image/png"
+        elif "webp" in mimetype:
+            mime = "image/webp"
+        else:
+            mime = "image/jpeg"
 
-        # Delegar ao message_service
-        await handle_incoming_message(
-            workspace_id   = workspace_id,
-            phone          = phone,
-            content        = content_str,
-            message_type   = message_type,
-            media_data     = media_data,
-            media_mime     = media_mime,
-            raw_payload    = payload,
-            raw_media_dict = raw_media_dict,
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            {"type": "text", "text": prompt},
+        ]}]
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(OPENROUTER_URL, json={
+                "model": VISION_MODEL, "messages": messages,
+                "max_tokens": 1000, "temperature": 0.2,
+            }, headers={
+                "Authorization": f"Bearer {self.openrouter_key}",
+                "Content-Type": "application/json",
+            })
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"].strip()
+            print(f"[Media] OpenRouter vision error {resp.status_code}: {resp.text[:200]}")
+            return ""
+
+    async def _openrouter_audio(self, audio_bytes: bytes, mimetype: str, prompt: str) -> str:
+        """Envia áudio para OpenRouter."""
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        if "ogg" in mimetype or "opus" in mimetype:
+            fmt = "ogg"
+        elif "mp4" in mimetype or "m4a" in mimetype:
+            fmt = "mp4"
+        else:
+            fmt = "ogg"
+
+        messages = [{"role": "user", "content": [
+            {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}},
+            {"type": "text", "text": prompt},
+        ]}]
+
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(OPENROUTER_URL, json={
+                "model": VISION_MODEL, "messages": messages,
+                "max_tokens": 1000, "temperature": 0.1,
+            }, headers={
+                "Authorization": f"Bearer {self.openrouter_key}",
+                "Content-Type": "application/json",
+            })
+            if resp.status_code == 200:
+                text = resp.json()["choices"][0]["message"]["content"].strip()
+                return text if text else ""
+            print(f"[Media] OpenRouter audio error {resp.status_code}: {resp.text[:200]}")
+            return ""
+
+    # ============================================================
+    # Métodos públicos
+    # ============================================================
+
+    async def describe_image(self, image_bytes: bytes, mimetype: str) -> str:
+        """Descreve imagem usando Gemini ou OpenRouter."""
+        prompt = (
+            "Descreva esta imagem de forma objetiva e concisa em português brasileiro. "
+            "Se houver texto na imagem, transcreva-o completamente. "
+            "Se for um documento, exame, receita ou pedido médico/veterinário, "
+            "extraia TODAS as informações: nome do paciente, espécie, raça, idade, "
+            "exames solicitados, posições, observações, nome do médico. "
+            "Responda apenas com a descrição/transcrição."
         )
+        try:
+            if self.use_gemini:
+                result = await self._gemini_vision(image_bytes, mimetype, prompt)
+            else:
+                result = await self._openrouter_vision(image_bytes, mimetype, prompt)
+            return result or "[Imagem recebida - não foi possível analisar]"
+        except Exception as e:
+            print(f"[Media] describe_image error: {e}")
+            return "[Imagem recebida - erro ao processar]"
 
-    except Exception as e:
-        import logging
-        logging.error(f"process_incoming_webhook error: {e}")
+    async def transcribe_audio(self, audio_bytes: bytes, mimetype: str) -> str:
+        """Transcreve áudio usando Gemini ou OpenRouter."""
+        prompt = "Transcreva este áudio em português brasileiro. Retorne APENAS a transcrição, sem explicações."
+        try:
+            if self.use_gemini:
+                result = await self._gemini_audio(audio_bytes, mimetype, prompt)
+            else:
+                result = await self._openrouter_audio(audio_bytes, mimetype, prompt)
+            return result or "[áudio inaudível]"
+        except Exception as e:
+            print(f"[Media] transcribe error: {e}")
+            return "[Áudio - erro ao processar]"
+
+    async def extract_pdf_text(self, pdf_bytes: bytes) -> str:
+        """Extrai texto de PDF com PyMuPDF."""
+        try:
+            import fitz
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                text = "\n".join([page.get_text() for page in doc]).strip()
+            return text[:3000] if text else "[PDF sem texto extraível]"
+        except ImportError:
+            return "[PDF - PyMuPDF não instalado]"
+        except Exception as e:
+            print(f"[Media] PDF error: {e}")
+            return "[PDF - erro ao extrair]"
+
+    async def process_media(
+        self, media_type: str, content_dict: dict, caption: str = ""
+    ) -> str:
+        """Método principal: baixa, descriptografa e processa mídia."""
+        if not content_dict or not (content_dict.get("URL") or content_dict.get("url")):
+            return caption or f"[Cliente enviou {media_type} mas sem dados]"
+
+        decrypted, mimetype = await self.decrypt_media(content_dict, media_type)
+        if not decrypted:
+            return caption or f"[Cliente enviou {media_type} - falha no download/descriptografia]"
+
+        try:
+            if media_type in ("image", "sticker"):
+                desc = await self.describe_image(decrypted, mimetype)
+                prefix = f"{caption}\n\n" if caption else ""
+                return f"{prefix}[DESCRIÇÃO DA IMAGEM]: {desc}"
+
+            elif media_type in ("ptt", "audio"):
+                trans = await self.transcribe_audio(decrypted, mimetype)
+                return f"[TRANSCRIÇÃO DO ÁUDIO]: {trans}"
+
+            elif media_type in ("document", "file"):
+                if "pdf" in mimetype.lower():
+                    pdf = await self.extract_pdf_text(decrypted)
+                    return f"[CONTEÚDO DO PDF]: {pdf}"
+                return caption or f"[Documento ({mimetype}) recebido]"
+
+            elif media_type == "video":
+                return caption or "[Cliente enviou um vídeo]"
+
+            return caption or f"[Mídia '{media_type}' recebida]"
+
+        except Exception as e:
+            print(f"[Media] process error ({media_type}): {e}")
+            return caption or f"[Erro ao processar {media_type}]"
+
+
+media_handler = MediaHandler()

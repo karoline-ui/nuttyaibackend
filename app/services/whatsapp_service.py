@@ -265,7 +265,7 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         media_data   = None
         media_mime   = None
 
-        # Se content é dict, é sempre mídia — detecta tipo pela mimetype
+        # Se content é dict, é sempre mídia — transcreve aqui mesmo
         if isinstance(raw_content, dict):
             mime = raw_content.get("mimetype", "")
             if "audio" in mime or "ogg" in mime or "opus" in mime:
@@ -275,9 +275,17 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
             elif "pdf" in mime:
                 message_type = "document"
             else:
-                message_type = "image"  # default para jpeg, png, webp, etc
+                message_type = "image"
             caption = raw_content.get("caption", "")
-            content = caption or f"[{message_type}]"
+            # Transcreve mídia aqui — chega como texto para o flow
+            try:
+                from app.services.whatsapp_media import media_handler as _mh
+                transcribed = await _mh.process_media(message_type, raw_content, caption)
+                content = transcribed
+                print(f"✅ Mídia transcrita: {content[:100]!r}")
+            except Exception as me:
+                print(f"⚠️ Transcrição error: {me}")
+                content = caption or f"[{message_type}]"
             raw_media_dict_pre = raw_content
         else:
             msg_type = msg.get("type", "") or msg.get("messageType", "") or chat.get("wa_lastMessageType", "")

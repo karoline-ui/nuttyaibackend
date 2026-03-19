@@ -291,6 +291,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         update_contact_info,
         send_media_file,
         search_knowledge_base,
+        get_next_available_slots,
         create_reminder,
     ]
 
@@ -366,6 +367,8 @@ async def process_message(
         + "\n\nREGRAS:\n"
         "- Responda em portugues\n"
         "- Para precos e servicos: use SEMPRE a BASE DE CONHECIMENTO acima\n"
+        "- Para sugerir horarios: use SEMPRE get_next_available_slots antes\n"
+        "- NUNCA invente horarios - use apenas os retornados pela tool\n"
         "- NUNCA diga que nao tem acesso a precos - eles estao na base acima\n"
         "- Sempre que souber o nome do cliente, chame update_contact_info\n"
         "- NUNCA invente valores\n"

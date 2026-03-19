@@ -21,7 +21,7 @@ from app.core.config import settings
 # Provider detection
 GEMINI_API_KEY = getattr(settings, "GEMINI_API_KEY", "") or ""
 GEMINI_MODEL = getattr(settings, "GEMINI_MODEL", "") or "gemini-2.5-flash"
-OPENROUTER_API_KEY = ""  # não usado neste projeto
+OPENROUTER_API_KEY = ""
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 VISION_MODEL = ""
 

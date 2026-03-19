@@ -1381,6 +1381,10 @@ def evaluate_condition(value: Any, operator: str, expected: Any) -> bool:
     """Avalia condição"""
     if operator == "equals":
         return str(value) == str(expected)
+    elif operator == "not_empty":
+        return bool(value) and str(value).strip() not in ("", "None", "null")
+    elif operator == "is_empty":
+        return not bool(value) or str(value).strip() in ("", "None", "null")
     elif operator == "contains":
         return str(expected).lower() in str(value).lower()
     elif operator == "not_equals":

@@ -265,39 +265,37 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         media_data   = None
         media_mime   = None
 
-        msg_type = msg.get("type", "") or msg.get("messageType", "") or chat.get("wa_lastMessageType", "")
-        # Se content é dict e msg_type ainda está vazio, detecta pela mimetype
-        if not msg_type and isinstance(raw_content, dict):
-            mime = raw_content.get("mimetype", "")
-            if "image" in mime or "jpeg" in mime or "png" in mime:
-                msg_type = "ImageMessage"
-            elif "audio" in mime or "ogg" in mime:
-                msg_type = "AudioMessage"
-            elif "pdf" in mime or "document" in mime:
-                msg_type = "DocumentMessage"
-            elif "video" in mime:
-                msg_type = "VideoMessage"
-        msg_type_lower = msg_type.lower()
-        print(f"🔍 msg_type={msg_type!r} raw_content_is_dict={isinstance(raw_content, dict)}")
-
-        if "audio" in msg_type_lower or "ptt" in msg_type_lower:
-            message_type = "audio"
-        elif "image" in msg_type_lower or "sticker" in msg_type_lower:
-            message_type = "image"
-        elif "video" in msg_type_lower:
-            message_type = "video"
-        elif "document" in msg_type_lower or "pdf" in msg_type_lower:
-            message_type = "document"
-        elif "button" in msg_type_lower or "list" in msg_type_lower:
-            message_type = "button_reply"
-
-        # Preserva dict de mídia original — processamento ocorre no flow
-        raw_media_dict_pre = raw_content if isinstance(raw_content, dict) else None
+        # Se content é dict, é sempre mídia — detecta tipo pela mimetype
         if isinstance(raw_content, dict):
-            caption = raw_content.get("caption", "") or msg.get("buttonOrListid", "")
+            mime = raw_content.get("mimetype", "")
+            if "audio" in mime or "ogg" in mime or "opus" in mime:
+                message_type = "audio"
+            elif "video" in mime or "mp4" in mime:
+                message_type = "video"
+            elif "pdf" in mime:
+                message_type = "document"
+            else:
+                message_type = "image"  # default para jpeg, png, webp, etc
+            caption = raw_content.get("caption", "")
             content = caption or f"[{message_type}]"
+            raw_media_dict_pre = raw_content
         else:
+            msg_type = msg.get("type", "") or msg.get("messageType", "") or chat.get("wa_lastMessageType", "")
+            msg_type_lower = msg_type.lower()
+            if "audio" in msg_type_lower or "ptt" in msg_type_lower:
+                message_type = "audio"
+            elif "image" in msg_type_lower or "sticker" in msg_type_lower:
+                message_type = "image"
+            elif "video" in msg_type_lower:
+                message_type = "video"
+            elif "document" in msg_type_lower or "pdf" in msg_type_lower:
+                message_type = "document"
+            elif "button" in msg_type_lower or "list" in msg_type_lower:
+                message_type = "button_reply"
             content = str(raw_content) if raw_content else ""
+            raw_media_dict_pre = None
+
+        print(f"🔍 message_type={message_type} is_media={raw_media_dict_pre is not None}")
 
         if message_type == "button_reply":
             content = content or msg.get("buttonOrListid", "")

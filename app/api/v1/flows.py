@@ -1022,7 +1022,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
                     from app.services.message_service import get_conversation
                     conv = await get_conversation(workspace_id, contact_id)
                     conv_id = conv.get("id")
-                response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"), conversation_id=conv_id)
+                response_text = await generate_ai_response(message, contact, workspace_id, config.get("context_override"))
                 print(f"🤖 ai_respond gerou: {response_text[:200]!r}")
                 if response_text:
                     result = await whatsapp_client.send_text(phone, response_text, workspace_id)

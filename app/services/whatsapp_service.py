@@ -279,26 +279,20 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         elif "button" in msg_type_lower or "list" in msg_type_lower:
             message_type = "button_reply"
 
-        # Se content é dict, é mídia — processar com media_handler
-        content = ""
+        # Preserva dict de mídia original — processamento ocorre no flow
+        raw_media_dict_pre = raw_content if isinstance(raw_content, dict) else None
         if isinstance(raw_content, dict):
-            try:
-                from app.services.media_handler import media_handler
-                caption = raw_content.get("caption", "") or msg.get("buttonOrListid", "")
-                content = await media_handler.process_media(message_type, raw_content, caption)
-                print(f"✅ Mídia processada: type={message_type} content={content[:100]!r}")
-            except Exception as me:
-                print(f"⚠️ media_handler error: {me}")
-                content = f"[Cliente enviou {message_type}]"
+            caption = raw_content.get("caption", "") or msg.get("buttonOrListid", "")
+            content = caption or f"[{message_type}]"
         else:
             content = str(raw_content) if raw_content else ""
 
         if message_type == "button_reply":
             content = content or msg.get("buttonOrListid", "")
 
-        # Preserva dict original de mídia antes de converter para string
-        raw_media_dict = content if isinstance(content, dict) else None
-        content_str = str(content)[:200] if isinstance(content, dict) else (content or "")
+        # raw_media_dict já foi preservado antes
+        raw_media_dict = raw_media_dict_pre
+        content_str = content or ""
 
         print(f"✅ Mensagem extraída: phone={phone} type={message_type} content={content_str[:80]!r}")
 

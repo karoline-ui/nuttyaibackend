@@ -109,7 +109,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
 
             # Buscar horário comercial do workspace
             ws = supabase.table("workspaces").select("business_hours").eq("id", workspace_id).limit(1).execute()
-            bh = (ws.data or {}).get("business_hours", {})
+            bh = (ws.data[0] if ws.data else {}).get("business_hours", {})
             day_names = ["sun","mon","tue","wed","thu","fri","sat"]
             try:
                 weekday = _dt.strptime(date, "%Y-%m-%d").weekday()  # 0=mon

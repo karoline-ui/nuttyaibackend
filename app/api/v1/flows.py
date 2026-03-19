@@ -782,8 +782,11 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         return {"status": "delayed", "duration": f"{dur} {unit}"}
 
     elif node_type == "condition.if":
-        fv     = get_nested_value(context, config.get("field", ""))
+        # Suporta tanto "field" quanto "var_name" para buscar a variável
+        field = config.get("field", "") or config.get("var_name", "")
+        fv = context.get("variables", {}).get(field, "") or get_nested_value(context, field)
         result = evaluate_condition(fv, config.get("operator", "equals"), config.get("value", ""))
+        print(f"🔀 condition.if: field={field!r} valor={fv!r} operator={config.get('operator')} expected={config.get('value')!r} result={result}")
         context["variables"]["_last_condition"] = result
         return {"status": "condition", "result": result,
                 "next_node_id": node.get("data", {}).get("true_node" if result else "false_node")}

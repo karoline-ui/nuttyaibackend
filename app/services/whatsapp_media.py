@@ -258,14 +258,13 @@ class MediaHandler:
         prompt = (
             "Analise esta imagem e retorne TODO o conteudo em portugues brasileiro. "
             "REGRAS OBRIGATORIAS:\n"
-            "1. Se for pedido/requisicao de exame medico ou veterinario:\n"
-            "   - Transcreva APENAS o que esta MARCADO, ASSINALADO ou PREENCHIDO\n"
-            "   - Nao liste opcoes nao marcadas\n"
-            "   - Para raio-x: liste SOMENTE as posicoes/regioes que estao com X, check ou marcacao\n"
-            "   - Informe: nome do paciente, especie, raca, tutor, medico, CRMV, posicoes MARCADAS, data\n"
-            "2. Se for receita: transcreva medicamentos, doses e instrucoes\n"
-            "3. Se for foto comum: descreva o que ve\n"
-            "4. Retorne APENAS o conteudo transcrito, sem comentarios"
+            "1. Se for documento medico/veterinario: transcreva TODOS os campos: "
+            "nome do paciente, especie, raca, idade, nome do tutor, nome do medico, CRM/CRMV, "
+            "exames solicitados, regioes/posicoes de raio-x, quantidade de posicoes, "
+            "observacoes, data, assinatura.\n"
+            "2. Nao omita nenhuma informacao do documento.\n"
+            "3. Se for foto comum: descreva objetivamente o que ve.\n"
+            "4. Retorne APENAS o conteudo, sem comentarios extras."
         )
         try:
             if self.use_gemini:

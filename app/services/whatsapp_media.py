@@ -256,12 +256,15 @@ class MediaHandler:
     async def describe_image(self, image_bytes: bytes, mimetype: str) -> str:
         """Descreve imagem usando Gemini ou OpenRouter."""
         prompt = (
-            "Descreva esta imagem de forma objetiva e concisa em português brasileiro. "
-            "Se houver texto na imagem, transcreva-o completamente. "
-            "Se for um documento, exame, receita ou pedido médico/veterinário, "
-            "extraia TODAS as informações: nome do paciente, espécie, raça, idade, "
-            "exames solicitados, posições, observações, nome do médico. "
-            "Responda apenas com a descrição/transcrição."
+            "Analise esta imagem e retorne TODO o conteudo em portugues brasileiro. "
+            "REGRAS OBRIGATORIAS:\n"
+            "1. Se for documento medico/veterinario: transcreva TODOS os campos: "
+            "nome do paciente, especie, raca, idade, nome do tutor, nome do medico, CRM/CRMV, "
+            "exames solicitados, regioes/posicoes de raio-x, quantidade de posicoes, "
+            "observacoes, data, assinatura.\n"
+            "2. Nao omita nenhuma informacao do documento.\n"
+            "3. Se for foto comum: descreva objetivamente o que ve.\n"
+            "4. Retorne APENAS o conteudo, sem comentarios extras."
         )
         try:
             if self.use_gemini:

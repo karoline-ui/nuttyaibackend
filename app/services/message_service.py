@@ -116,7 +116,7 @@ async def handle_incoming_message(
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
         "direction":    "inbound",
-        "content":      str(content)[:1000] if content else f"[{message_type}]",
+        "content":      str(content)[:4000] if content else f"[{message_type}]",
         "type":         message_type,
         "is_ai":        False,
         "created_at":   datetime.now().isoformat(),
@@ -215,6 +215,7 @@ async def handle_incoming_message(
 
     matched_flow = None
     # Preserva content original (pode ser dict de mídia) para o flow processar
+    print(f"[trigger_data] message len={len(str(content))} chars")
     trigger_data = {
         "message": content, "phone": phone, "type": message_type,
         "contact_id": contact_id, "is_new_contact": False,

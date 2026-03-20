@@ -55,6 +55,9 @@ async def save_message(workspace_id: str, conversation_id: str, msg_data: dict) 
     return result.data[0] if result.data else {}
 
 
+# Debounce: evita processar mensagens em rajada do mesmo contato
+_last_message_time: dict = {}
+
 async def handle_incoming_message(
     workspace_id: str,
     phone: str,

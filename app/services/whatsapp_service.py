@@ -268,11 +268,13 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         # Se content é dict, é sempre mídia — transcreve aqui mesmo
         if isinstance(raw_content, dict):
             mime = raw_content.get("mimetype", "")
-            if "audio" in mime or "ogg" in mime or "opus" in mime:
+            wa_type = chat.get("wa_lastMessageType", "") or msg.get("type", "") or ""
+            wa_type_lower = wa_type.lower()
+            if "audio" in mime or "ogg" in mime or "opus" in mime or "ptt" in wa_type_lower or "audio" in wa_type_lower:
                 message_type = "audio"
-            elif "video" in mime or "mp4" in mime:
+            elif "video" in mime or "mp4" in mime or "video" in wa_type_lower:
                 message_type = "video"
-            elif "pdf" in mime:
+            elif "pdf" in mime or "document" in wa_type_lower:
                 message_type = "document"
             else:
                 message_type = "image"

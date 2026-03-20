@@ -357,7 +357,6 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         update_contact_info,
         send_media_file,
         search_knowledge_base,
-        get_next_available_slots,
         create_reminder,
         notify_doctor,
         transfer_to_human,

@@ -56,9 +56,11 @@ async def upload_media(
             file=content,
             file_options={"content-type": mime, "upsert": "true"},
         )
+        print(f"[Media] upload res: {res}")
         if hasattr(res, 'error') and res.error:
             raise Exception(str(res.error))
     except Exception as e:
+        import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
 
     # URL pública do Supabase Storage

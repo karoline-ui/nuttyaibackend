@@ -157,6 +157,18 @@ async def _execute_campaign(campaign_id: str, workspace_id: str, contacts: list,
                 "status": "sent", "sent_at": datetime.now().isoformat()
             }).eq("campaign_id", campaign_id).eq("contact_id", contact["id"]).execute()
 
+            # Tag automática no contato
+            try:
+                tag_name = "campanha_" + campaign.get("name", "").lower().replace(" ", "_")[:30]
+                ct = supabase.table("contacts").select("tags").eq("id", contact["id"]).limit(1).execute()
+                current_tags = (ct.data[0] if ct.data else {}).get("tags") or []
+                if tag_name not in current_tags:
+                    supabase.table("contacts").update({
+                        "tags": current_tags + [tag_name]
+                    }).eq("id", contact["id"]).execute()
+            except Exception:
+                pass
+
         except Exception as e:
             failed += 1
             supabase.table("campaign_recipients").update({

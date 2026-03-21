@@ -69,7 +69,7 @@ async def launch_campaign(
 
     # Buscar contatos
     target_tags = camp.get("target_tags") or []
-    contacts_q = supabase.table("contacts").select("id, phone, name").eq(
+    contacts_q = supabase.table("contacts").select("id, phone, name, tags").eq(
         "workspace_id", workspace_id
     ).eq("is_blocked", False).eq("opted_out", False)
 
@@ -125,11 +125,31 @@ async def _execute_campaign(campaign_id: str, workspace_id: str, contacts: list,
             message = campaign["message_template"].replace(
                 "{{nome}}", contact.get("name") or contact.get("phone") or ""
             )
-            await whatsapp_client.send_text(
-                phone=contact["phone"],
-                message=message,
-                workspace_id=workspace_id,
-            )
+            # Envia mídia se configurada
+            media_file_id = campaign.get("media_file_id")
+            if media_file_id:
+                # Busca URL da mídia
+                mf = supabase.table("media_files").select("public_url, mime_type, file_name").eq(
+                    "id", media_file_id).limit(1).execute()
+                if mf.data:
+                    mfile = mf.data[0]
+                    mime = mfile.get("mime_type", "")
+                    url = mfile.get("public_url", "")
+                    # URL relativa → URL absoluta
+                    if url.startswith("/"):
+                        url = "https://nuttyaibackend-897373535500.southamerica-east1.run.app" + url
+                    if "image" in mime:
+                        await whatsapp_client.send_image(contact["phone"], url, message, workspace_id)
+                    else:
+                        await whatsapp_client.send_text(contact["phone"], message, workspace_id)
+                else:
+                    await whatsapp_client.send_text(contact["phone"], message, workspace_id)
+            else:
+                await whatsapp_client.send_text(
+                    phone=contact["phone"],
+                    message=message,
+                    workspace_id=workspace_id,
+                )
             sent += 1
 
             # Atualizar recipient

@@ -85,7 +85,7 @@ async def process_with_gemini(content: bytes, mime: str, category: str) -> dict:
 async def upload_media(
     workspace_id: str = Form(...),
     file: UploadFile = File(...),
-    auto_process: bool = Form(True),
+    auto_process: bool = Form(False),
 ):
     mime = file.content_type or "application/octet-stream"
     

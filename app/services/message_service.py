@@ -232,14 +232,17 @@ async def handle_incoming_message(
             for node in nodes:
                 nd = node.get("data", {})
                 if nd.get("nodeType") == "trigger.keyword":
-                    kw = nd.get("config", {}).get("keyword", "").strip().lower()
+                    kw_raw = nd.get("config", {}).get("keyword", "").strip().lower()
                     mode = nd.get("config", {}).get("mode", "contains")
                     msg_lower = content.lower()
-                    if kw and (
-                        (mode == "contains" and kw in msg_lower) or
-                        (mode == "exact" and kw == msg_lower) or
-                        (mode == "starts_with" and msg_lower.startswith(kw))
-                    ):
+                    # Suporta múltiplas keywords separadas por vírgula
+                    keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+                    kw_match = False
+                    for kw in keywords:
+                        if (mode == "contains" and kw in msg_lower) or                            (mode == "exact" and kw == msg_lower) or                            (mode == "starts_with" and msg_lower.startswith(kw)):
+                            kw_match = True
+                            break
+                    if kw_match:
                         matched_flow = flow
                         break
             if matched_flow:

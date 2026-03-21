@@ -1,20 +1,14 @@
 """
-app/api/v1/media.py - Upload e gerenciamento de arquivos de mídia
+app/api/v1/media.py - Upload e gerenciamento de arquivos de mídia via Supabase Storage
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse
 from typing import Optional
-import aiofiles
 import uuid
 from pathlib import Path
 
-from app.core.config import settings
 from app.core.database import get_supabase
 
 router = APIRouter()
-
-UPLOAD_PATH = Path(settings.UPLOAD_DIR)
-UPLOAD_PATH.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_TYPES = [
     "image/jpeg","image/png","image/webp","image/gif",
@@ -22,6 +16,8 @@ ALLOWED_TYPES = [
     "video/mp4","video/webm",
     "application/pdf",
 ]
+
+MAX_SIZE_MB = 50
 
 def get_category(mime: str) -> str:
     if mime.startswith("image/"): return "images"
@@ -38,33 +34,43 @@ async def upload_media(
     display_name: str = Form(""),
 ):
     mime = file.content_type or "application/octet-stream"
-
     if mime not in ALLOWED_TYPES and not mime.startswith(("image/","audio/","video/")):
         raise HTTPException(status_code=400, detail=f"Tipo não suportado: {mime}")
 
     content = await file.read()
     size_mb = len(content) / (1024 * 1024)
-    if size_mb > settings.MAX_FILE_SIZE_MB:
+    if size_mb > MAX_SIZE_MB:
         raise HTTPException(status_code=413, detail=f"Arquivo muito grande: {size_mb:.1f}MB")
 
     category = get_category(mime)
     file_ext = Path(file.filename or "file").suffix or ".bin"
     unique_name = f"{uuid.uuid4()}{file_ext}"
-    storage_path = UPLOAD_PATH / workspace_id / category / unique_name
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-
-    async with aiofiles.open(storage_path, "wb") as f:
-        await f.write(content)
-
-    public_url = f"/api/v1/media/serve/{workspace_id}/{category}/{unique_name}"
+    storage_path = f"{workspace_id}/{category}/{unique_name}"
 
     supabase = get_supabase()
+
+    # Upload para Supabase Storage
+    try:
+        res = supabase.storage.from_("media").upload(
+            path=storage_path,
+            file=content,
+            file_options={"content-type": mime, "upsert": "true"},
+        )
+        if hasattr(res, 'error') and res.error:
+            raise Exception(str(res.error))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
+
+    # URL pública do Supabase Storage
+    public_url = supabase.storage.from_("media").get_public_url(storage_path)
+
+    # Salva registro no banco
     result = supabase.table("media_files").insert({
         "workspace_id": workspace_id,
         "file_name": display_name or file.filename,
         "file_size": len(content),
         "mime_type": mime,
-        "storage_path": str(storage_path),
+        "storage_path": storage_path,
         "public_url": public_url,
     }).execute()
 
@@ -72,18 +78,6 @@ async def upload_media(
         "file_name": display_name or file.filename,
         "public_url": public_url,
     }
-
-
-@router.get("/serve/{workspace_id}/{category}/{filename}")
-async def serve_file(workspace_id: str, category: str, filename: str):
-    for base in [
-        UPLOAD_PATH / workspace_id / category / filename,
-        Path("uploads") / workspace_id / category / filename,
-        Path("E:/nutty-saas/uploads") / workspace_id / category / filename,
-    ]:
-        if base.exists():
-            return FileResponse(str(base))
-    raise HTTPException(status_code=404, detail="Arquivo não encontrado")
 
 
 @router.get("")
@@ -102,9 +96,10 @@ async def delete_media(media_id: str, workspace_id: str):
     rec = supabase.table("media_files").select("storage_path").eq(
         "id", media_id).eq("workspace_id", workspace_id).limit(1).execute()
     if rec.data:
-        p = Path(rec.data[0]["storage_path"])
-        if p.exists():
-            p.unlink()
+        try:
+            supabase.storage.from_("media").remove([rec.data[0]["storage_path"]])
+        except Exception:
+            pass
     supabase.table("media_files").delete().eq("id", media_id).eq(
         "workspace_id", workspace_id).execute()
     return {"status": "deleted"}

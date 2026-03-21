@@ -248,7 +248,27 @@ async def handle_incoming_message(
             if matched_flow:
                 break
 
-        # 2. message_received genérico
+        # 2. Keyword nodes em flows message_received (flows que têm trigger.keyword mesmo com trigger=message_received)
+        if not matched_flow:
+            for flow in all_flows.data:
+                nodes = flow.get("nodes", [])
+                for node in nodes:
+                    nd = node.get("data", {})
+                    if nd.get("nodeType") == "trigger.keyword":
+                        kw_raw = nd.get("config", {}).get("keyword", "").strip().lower()
+                        mode = nd.get("config", {}).get("mode", "contains")
+                        msg_lower = content.lower()
+                        keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+                        for kw in keywords:
+                            if (mode == "contains" and kw in msg_lower) or                                (mode == "exact" and kw == msg_lower) or                                (mode == "starts_with" and msg_lower.startswith(kw)):
+                                matched_flow = flow
+                                break
+                        if matched_flow:
+                            break
+                if matched_flow:
+                    break
+
+        # 3. message_received genérico
         if not matched_flow:
             for flow in all_flows.data:
                 nodes = flow.get("nodes", [])

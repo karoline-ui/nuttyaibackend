@@ -285,11 +285,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
 
 
     @tool
-    def notify_doctor(subject: str, message: str) -> str:
+    def notify_responsible(subject: str, message: str) -> str:
         """
-        Notifica o medico responsavel via WhatsApp.
-        Use quando cliente mencionar medicamentos ou duvidas sobre tratamento.
-        subject: assunto resumido. message: mensagem com dados do cliente.
+        Notifica o responsavel do negocio via WhatsApp.
+        Use conforme as instrucoes do workspace (ex: notificar sobre medicamentos, reclamacoes, casos urgentes).
+        subject: assunto resumido. message: mensagem completa com dados do cliente.
         """
         try:
             import asyncio
@@ -358,7 +358,7 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         send_media_file,
         search_knowledge_base,
         create_reminder,
-        notify_doctor,
+        notify_responsible,
         transfer_to_human,
     ]
 

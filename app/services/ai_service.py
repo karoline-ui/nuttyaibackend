@@ -123,10 +123,10 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             # Buscar horário comercial do workspace
             ws = supabase.table("workspaces").select("business_hours").eq("id", workspace_id).limit(1).execute()
             bh = (ws.data[0] if ws.data else {}).get("business_hours", {})
-            day_names = ["sun","mon","tue","wed","thu","fri","sat"]
+            day_names = ["mon","tue","wed","thu","fri","sat","sun"]
             try:
                 weekday = _dt.strptime(date, "%Y-%m-%d").weekday()  # 0=mon
-                day_key = day_names[(weekday + 1) % 7]  # adjust to sun=0
+                day_key = day_names[weekday]  # direto: 0=mon,1=tue,2=wed...
                 day_hours = bh.get(day_key)
             except Exception:
                 day_hours = {"open": "08:00", "close": "18:00"}
@@ -409,6 +409,25 @@ async def process_message(
         import google.generativeai as _genai
         _genai.configure(api_key=ws_api_key)
     
+    # Busca dados do contato para personalizar o atendimento
+    contact_info = ""
+    try:
+        ct = supabase_client.table("contacts").select("name, notes, tags").eq(
+            "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+        if ct.data:
+            ct_data = ct.data[0]
+            ct_name = ct_data.get("name", "")
+            ct_notes = ct_data.get("notes", "")
+            ct_tags = ct_data.get("tags") or []
+            parts = []
+            if ct_name: parts.append("Nome: " + ct_name)
+            if ct_notes: parts.append("Notas: " + ct_notes)
+            if ct_tags: parts.append("Tags: " + ", ".join(ct_tags))
+            if parts:
+                contact_info = "\n\nCONTATO ATUAL:\n" + "\n".join(parts)
+    except Exception as ce:
+        print(f"[Contact] erro: {ce}")
+
     # Carrega knowledge_base do workspace
     kb_content = ""
     try:
@@ -431,6 +450,7 @@ async def process_message(
         "Data/hora: " + datetime.now().strftime("%d/%m/%Y %H:%M") + " (" + weekday_pt + ")\n\n"
         + instructions
         + kb_block
+        + contact_info
         + "\n\nREGRAS:\n"
         "- Responda em portugues\n"
         "- Para precos e servicos: use SEMPRE a BASE DE CONHECIMENTO acima\n"

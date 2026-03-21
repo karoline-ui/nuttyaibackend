@@ -914,15 +914,23 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         notif_phone = _ws_data.get("notification_phone", "")
         ws_name = _ws_data.get("name", "Sistema")
         contact = context.get("contact", {})
+        # Busca notes do contato no banco (não vem no context padrão)
+        contact_notes = contact.get("notes", "")
+        try:
+            ct = _sb.table("contacts").select("notes").eq(
+                "workspace_id", workspace_id).eq("phone", contact.get("phone","")).limit(1).execute()
+            if ct.data:
+                contact_notes = ct.data[0].get("notes", "") or ""
+        except Exception:
+            pass
 
         if notif_phone and not context.get("_simulating"):
             msg_template = config.get("message", "")
-            # Substitui variáveis
             msg_template = msg_template.replace("{{workspace.notification_phone}}", notif_phone)
             msg_template = msg_template.replace("{{workspace.name}}", ws_name)
             msg_template = msg_template.replace("{{contact.name}}", contact.get("name", contact.get("phone", "")))
             msg_template = msg_template.replace("{{contact.phone}}", contact.get("phone", ""))
-            msg_template = msg_template.replace("{{contact.notes}}", contact.get("notes", ""))
+            msg_template = msg_template.replace("{{contact.notes}}", contact_notes)
             print(f"📣 send_whatsapp_notification → {notif_phone}: {msg_template[:80]!r}")
             await whatsapp_client.send_text(notif_phone, msg_template, workspace_id)
         elif not notif_phone:

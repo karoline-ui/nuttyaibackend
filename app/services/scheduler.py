@@ -244,6 +244,34 @@ async def process_flow_resumptions():
                     "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
                 contact = contact_result.data[0] if contact_result.data else {"phone": contact_phone}
                 
+                # Verifica se cliente mandou mensagem desde que pausou
+                # (Se mandou, o atendente humano pode ainda estar atendendo)
+                paused_at = r.get("created_at", "")
+                if paused_at:
+                    recent_msg = supabase.table("messages").select("id").eq(
+                        "workspace_id", workspace_id
+                    ).eq("direction", "inbound").gte("created_at", paused_at).limit(1).execute()
+                    # Filtra pelo contato
+                    conv = supabase.table("conversations").select("id").eq(
+                        "workspace_id", workspace_id).eq("contact_phone", contact_phone).limit(1).execute()
+                    if conv.data:
+                        recent_msg = supabase.table("messages").select("id").eq(
+                            "conversation_id", conv.data[0]["id"]
+                        ).eq("direction", "inbound").gte("created_at", paused_at).limit(1).execute()
+                        # Conta mensagens do humano (atendente) após pause
+                        human_msgs = supabase.table("messages").select("id").eq(
+                            "conversation_id", conv.data[0]["id"]
+                        ).eq("direction", "outbound").eq("is_ai", False).gte("created_at", paused_at).limit(1).execute()
+                        if human_msgs.data:
+                            # Atendente respondeu — não reativa ainda, reagenda por mais 30min
+                            from datetime import timezone as _tz2, timedelta as _td2
+                            new_resume = (__import__("datetime").datetime.now(_tz2.utc) + _td2(minutes=30)).isoformat()
+                            supabase.table("flow_resumptions").update({
+                                "status": "pending", "resume_at": new_resume
+                            }).eq("id", r["id"]).execute()
+                            print(f"⏰ Atendente ativo — reagenda reativação para {new_resume}")
+                            continue
+
                 # Reconstrói contexto
                 from app.api.v1.flows import run_flow
                 context = {

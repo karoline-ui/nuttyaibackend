@@ -333,6 +333,7 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
             media_mime     = media_mime,
             raw_payload    = payload,
             raw_media_dict = raw_media_dict,
+            contact_name   = chat.get("wa_name") or chat.get("wa_contactName") or "",
         )
 
     except Exception as e:

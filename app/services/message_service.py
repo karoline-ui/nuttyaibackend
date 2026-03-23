@@ -62,6 +62,7 @@ async def handle_incoming_message(
     workspace_id: str,
     phone: str,
     content: str,
+    contact_name: str = "",
     message_type: str = "text",
     media_data: bytes = None,
     media_mime: str = None,
@@ -90,11 +91,16 @@ async def handle_incoming_message(
 
     if contact_result.data:
         contact = contact_result.data[0]
+        # Atualiza nome se ainda é o número (nunca foi preenchido)
+        if contact_name and contact.get("name", "") == phone:
+            supabase.table("contacts").update({"name": contact_name}).eq(
+                "id", contact["id"]).execute()
+            contact["name"] = contact_name
     else:
         new_contact = supabase.table("contacts").insert({
             "workspace_id": workspace_id,
             "phone": phone,
-            "name": phone,
+            "name": contact_name or phone,
             "tags": ["novo"],
         }).execute()
         contact = new_contact.data[0] if new_contact.data else {"id": None, "phone": phone, "name": phone, "tags": []}

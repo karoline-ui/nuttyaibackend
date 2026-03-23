@@ -307,12 +307,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
                      "",
                      message]
             full_msg = "\n".join(parts)
-            from app.services.whatsapp_service import WhatsAppClient
-            wc = WhatsAppClient(workspace_id)
+            from app.services.whatsapp_service import whatsapp_client
             loop = asyncio.new_event_loop()
-            loop.run_until_complete(wc.send_text(notif_phone, full_msg, workspace_id))
+            loop.run_until_complete(whatsapp_client.send_text(notif_phone, full_msg, workspace_id))
             loop.close()
-            return "Medico notificado com sucesso sobre: " + subject
+            return "Responsavel notificado com sucesso sobre: " + subject
         except Exception as e:
             return "Erro ao notificar medico: " + str(e)
 

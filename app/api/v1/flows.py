@@ -873,18 +873,22 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         total_secs = dur * secs
         from datetime import timezone as _tz
         resume_at = (datetime.now(_tz.utc) + __import__("datetime").timedelta(seconds=total_secs)).isoformat()
-        supabase.table("flow_resumptions").insert({
-            "workspace_id": workspace_id,
-            "flow_id": flow_id,
-            "contact_phone": context.get("contact", {}).get("phone", ""),
-            "resume_after_node": node.get("id"),
-            "resume_at": resume_at,
-            "context_snapshot": {
-                "variables": context.get("variables", {}),
-                "contact": context.get("contact", {}),
-            },
-        }).execute()
-        print(f"⏰ Inactividade: reativa IA em {resume_at}")
+        try:
+            ins = supabase.table("flow_resumptions").insert({
+                "workspace_id": workspace_id,
+                "flow_id": flow_id,
+                "contact_phone": context.get("contact", {}).get("phone", ""),
+                "resume_after_node": node.get("id"),
+                "resume_at": resume_at,
+                "context_snapshot": {
+                    "variables": context.get("variables", {}),
+                    "contact": context.get("contact", {}),
+                },
+            }).execute()
+            print(f"⏰ Inatividade agendada: {resume_at} → {ins.data}")
+        except Exception as _re:
+            import traceback; traceback.print_exc()
+            print(f"❌ flow_resumptions insert error: {_re}")
         return {"status": "inactivity_scheduled", "resume_at": resume_at, "_stop_flow": True}
 
     elif node_type == "condition.loop":

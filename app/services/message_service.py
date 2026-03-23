@@ -268,16 +268,31 @@ async def handle_incoming_message(
                 if matched_flow:
                     break
 
-        # 3. message_received genérico
+        # 3. message_received genérico — só se não houver keyword flow ativo para este contato
         if not matched_flow:
-            for flow in all_flows.data:
-                nodes = flow.get("nodes", [])
-                for node in nodes:
-                    if node.get("data", {}).get("nodeType") == "trigger.message_received":
-                        matched_flow = flow
+            # Verifica se contato tem tag de keyword flow ativo (ex: duvida_medicamento)
+            contact_tags = contact.get("tags") or []
+            keyword_active = any(t in contact_tags for t in ["duvida_medicamento", "transferencia_humano"])
+            if not keyword_active:
+                for flow in all_flows.data:
+                    nodes = flow.get("nodes", [])
+                    for node in nodes:
+                        if node.get("data", {}).get("nodeType") == "trigger.message_received":
+                            matched_flow = flow
+                            break
+                    if matched_flow:
                         break
-                if matched_flow:
-                    break
+            else:
+                # Busca o flow keyword correspondente à tag ativa
+                for flow in all_flows.data:
+                    nodes = flow.get("nodes", [])
+                    for node in nodes:
+                        nd = node.get("data", {})
+                        if nd.get("nodeType") == "trigger.keyword":
+                            matched_flow = flow
+                            break
+                    if matched_flow:
+                        break
 
     if matched_flow:
         print(f"✅ Flow matched: {matched_flow.get('name', matched_flow.get('id'))}")

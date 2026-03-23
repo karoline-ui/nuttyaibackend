@@ -265,8 +265,12 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         media_data   = None
         media_mime   = None
 
-        # Se content é dict, é sempre mídia — transcreve aqui mesmo
-        if isinstance(raw_content, dict):
+        # Se content é dict E tem URL/mediaKey, é mídia real
+        # Se não tiver, pode ser dado de contato/perfil — trata como texto
+        if isinstance(raw_content, dict) and (
+            raw_content.get("URL") or raw_content.get("url") or 
+            raw_content.get("mediaKey") or raw_content.get("directPath")
+        ):
             mime = raw_content.get("mimetype", "")
             wa_type = chat.get("wa_lastMessageType", "") or msg.get("type", "") or ""
             wa_type_lower = wa_type.lower()

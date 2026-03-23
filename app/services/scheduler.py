@@ -177,19 +177,104 @@ async def send_appointment_reminders():
                 f"Para confirmar responda *SIM* ou para cancelar responda *NÃO*."
             )
 
+            # Marca como enviado ANTES de enviar para evitar duplicação
+            update_result = supabase.table("appointments").update({
+                "reminder_sent": True,
+                "reminder_at": datetime.now().isoformat(),
+            }).eq("id", apt["id"]).eq("reminder_sent", False).execute()
+            
+            # Só envia se conseguiu marcar (evita race condition)
+            if not update_result.data:
+                continue
+
             await whatsapp_client.send_text(
                 phone=phone,
                 message=message,
                 workspace_id=apt["workspace_id"],
             )
 
-            supabase.table("appointments").update({
-                "reminder_sent": True,
-                "reminder_at": datetime.now().isoformat(),
-            }).eq("id", apt["id"]).execute()
-
         except Exception as e:
             print(f"Apt reminder failed {apt['id']}: {e}")
+
+
+async def process_flow_resumptions():
+    """Retoma flows pausados por delay longo ou inatividade"""
+    try:
+        supabase = get_supabase()
+        from datetime import timezone as _tz
+        now = __import__("datetime").datetime.now(_tz.utc).isoformat()
+        
+        pending = supabase.table("flow_resumptions").select("*").eq(
+            "status", "pending").lte("resume_at", now).limit(10).execute()
+        
+        for r in (pending.data or []):
+            try:
+                # Marca como processando
+                supabase.table("flow_resumptions").update({"status": "processing"}).eq(
+                    "id", r["id"]).execute()
+                
+                workspace_id = r["workspace_id"]
+                flow_id = r["flow_id"]
+                contact_phone = r["contact_phone"]
+                resume_after = r["resume_after_node"]
+                ctx_snapshot = r.get("context_snapshot", {})
+                
+                # Busca flow
+                flow = supabase.table("flows").select("nodes, edges").eq(
+                    "id", flow_id).limit(1).execute()
+                if not flow.data:
+                    continue
+                
+                nodes = flow.data[0].get("nodes", [])
+                edges = flow.data[0].get("edges", [])
+                
+                # Encontra nó após o pausado
+                next_edges = [e for e in edges if e.get("source") == resume_after]
+                if not next_edges:
+                    supabase.table("flow_resumptions").update({"status": "done"}).eq("id", r["id"]).execute()
+                    continue
+                
+                next_node_id = next_edges[0].get("target")
+                next_node = next((n for n in nodes if n["id"] == next_node_id), None)
+                if not next_node:
+                    continue
+                
+                # Busca contato
+                contact_result = supabase.table("contacts").select("*").eq(
+                    "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+                contact = contact_result.data[0] if contact_result.data else {"phone": contact_phone}
+                
+                # Reconstrói contexto
+                from app.api.v1.flows import run_flow
+                context = {
+                    "workspace_id": workspace_id,
+                    "contact": contact,
+                    "variables": ctx_snapshot.get("variables", {}),
+                    "trigger_data": {"phone": contact_phone, "message": ""},
+                }
+                
+                # Executa a partir do próximo nó
+                from app.api.v1.flows import execute_node
+                print(f"⏰ Retomando flow {flow_id} no nó {next_node_id} para {contact_phone}")
+                
+                current = next_node
+                while current:
+                    result = await execute_node(current, context, workspace_id, flow_id, nodes, edges)
+                    if isinstance(result, dict) and result.get("_stop_flow"):
+                        break
+                    next_edges = [e for e in edges if e.get("source") == current["id"]]
+                    if not next_edges:
+                        break
+                    next_id = next_edges[0].get("target")
+                    current = next((n for n in nodes if n["id"] == next_id), None)
+                
+                supabase.table("flow_resumptions").update({"status": "done"}).eq("id", r["id"]).execute()
+                
+            except Exception as e:
+                print(f"⚠️ Flow resumption error {r['id']}: {e}")
+                supabase.table("flow_resumptions").update({"status": "error"}).eq("id", r["id"]).execute()
+    except Exception as e:
+        print(f"⚠️ process_flow_resumptions error: {e}")
 
 
 async def process_scheduled_flows():

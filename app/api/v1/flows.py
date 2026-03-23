@@ -777,8 +777,28 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         unit = config.get("unit", "seconds")
         dur  = float(config.get("duration", 1))
         secs = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}.get(unit, 1)
+        total_secs = dur * secs
         if not context.get("_simulating"):
-            await asyncio.sleep(min(dur * secs, 300))  # max 5min em execução real
+            if total_secs <= 30:
+                # Delay curto — executa inline
+                await asyncio.sleep(total_secs)
+            else:
+                # Delay longo — agenda no scheduler para retomar o flow
+                from datetime import timezone as _tz
+                resume_at = (datetime.now(_tz.utc) + __import__("datetime").timedelta(seconds=total_secs)).isoformat()
+                supabase.table("flow_resumptions").insert({
+                    "workspace_id": workspace_id,
+                    "flow_id": flow_id,
+                    "contact_phone": context.get("contact", {}).get("phone", ""),
+                    "resume_after_node": node.get("id"),
+                    "resume_at": resume_at,
+                    "context_snapshot": {
+                        "variables": context.get("variables", {}),
+                        "contact": context.get("contact", {}),
+                    },
+                }).execute()
+                print(f"⏰ Delay longo: flow pausado, retoma em {resume_at}")
+                return {"status": "delayed_scheduled", "resume_at": resume_at, "_stop_flow": True}
         return {"status": "delayed", "duration": f"{dur} {unit}"}
 
     elif node_type == "condition.if":
@@ -835,7 +855,26 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         }
 
     elif node_type == "condition.inactivity":
-        return {"status": "inactivity_monitored", "action": config.get("action", "reactivate_ai")}
+        # Agenda reativação da IA após X minutos de inatividade
+        unit = config.get("unit", "minutes")
+        dur  = float(config.get("duration", 30))
+        secs = {"seconds": 1, "minutes": 60, "hours": 3600}.get(unit, 60)
+        total_secs = dur * secs
+        from datetime import timezone as _tz
+        resume_at = (datetime.now(_tz.utc) + __import__("datetime").timedelta(seconds=total_secs)).isoformat()
+        supabase.table("flow_resumptions").insert({
+            "workspace_id": workspace_id,
+            "flow_id": flow_id,
+            "contact_phone": context.get("contact", {}).get("phone", ""),
+            "resume_after_node": node.get("id"),
+            "resume_at": resume_at,
+            "context_snapshot": {
+                "variables": context.get("variables", {}),
+                "contact": context.get("contact", {}),
+            },
+        }).execute()
+        print(f"⏰ Inactividade: reativa IA em {resume_at}")
+        return {"status": "inactivity_scheduled", "resume_at": resume_at, "_stop_flow": True}
 
     elif node_type == "condition.loop":
         counter_key = f"_loop_{node.get('id','')}"

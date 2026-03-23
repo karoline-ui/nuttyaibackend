@@ -697,6 +697,10 @@ async def run_flow(
             # Se for condição, decide próximo node
             node_type_check = current_node.get("type", "") or current_node.get("data", {}).get("nodeType", "")
             print(f"🔗 nó {node_label!r} type={node_type_check!r} result={str(result)[:100]}")
+            # Para o flow se o nó pediu (ex: inactivity, delay longo)
+            if isinstance(result, dict) and result.get("_stop_flow"):
+                print(f"⏹️ Flow pausado por {node_type_check}")
+                break
             if node_type_check.startswith("condition."):
                 next_id = result.get("next_node_id")
                 if not next_id and "result" in result:
@@ -866,29 +870,27 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         }
 
     elif node_type == "condition.inactivity":
-        # Agenda reativação da IA após X minutos de inatividade
+        # Agenda reativação da IA salvando nos metadados da conversa
         unit = config.get("unit", "minutes")
         dur  = float(config.get("duration", 30))
         secs = {"seconds": 1, "minutes": 60, "hours": 3600}.get(unit, 60)
         total_secs = dur * secs
         from datetime import timezone as _tz
         resume_at = (datetime.now(_tz.utc) + __import__("datetime").timedelta(seconds=total_secs)).isoformat()
-        try:
-            ins = supabase.table("flow_resumptions").insert({
-                "workspace_id": workspace_id,
-                "flow_id": flow_id,
-                "contact_phone": context.get("contact", {}).get("phone", ""),
-                "resume_after_node": node.get("id"),
-                "resume_at": resume_at,
-                "context_snapshot": {
-                    "variables": context.get("variables", {}),
-                    "contact": context.get("contact", {}),
-                },
-            }).execute()
-            print(f"⏰ Inatividade agendada: {resume_at} → {ins.data}")
-        except Exception as _re:
-            import traceback; traceback.print_exc()
-            print(f"❌ flow_resumptions insert error: {_re}")
+        reactivate_msg = config.get("message", "Olá! Vou continuar seu atendimento. Como posso ajudar?")
+        contact_id = context.get("contact", {}).get("id", "")
+        if contact_id:
+            try:
+                import json
+                supabase.table("conversations").update({
+                    "metadata": json.dumps({
+                        "reactivate_at": resume_at,
+                        "reactivate_message": reactivate_msg,
+                    })
+                }).eq("workspace_id", workspace_id).eq("contact_id", contact_id).execute()
+                print(f"⏰ Inatividade: reativa em {resume_at} para contact_id={contact_id}")
+            except Exception as _re:
+                print(f"❌ inactivity save error: {_re}")
         return {"status": "inactivity_scheduled", "resume_at": resume_at, "_stop_flow": True}
 
     elif node_type == "condition.loop":

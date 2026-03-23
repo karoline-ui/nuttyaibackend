@@ -197,6 +197,55 @@ async def send_appointment_reminders():
             print(f"Apt reminder failed {apt['id']}: {e}")
 
 
+async def reactivate_paused_conversations():
+    """Reativa conversas pausadas há mais de X minutos sem resposta do atendente"""
+    try:
+        from app.services.whatsapp_service import whatsapp_client
+        supabase = get_supabase()
+        from datetime import timezone as _tz, timedelta as _td
+        
+        # Busca conversas pausadas
+        paused = supabase.table("conversations").select(
+            "id, contact_id, workspace_id, metadata, updated_at"
+        ).eq("ai_status", "paused").execute()
+        
+        for conv in (paused.data or []):
+            try:
+                meta = conv.get("metadata") or {}
+                if isinstance(meta, str):
+                    import json
+                    meta = json.loads(meta)
+                
+                reactivate_at = meta.get("reactivate_at")
+                if not reactivate_at:
+                    continue
+                
+                from datetime import datetime as _dt
+                reactivate_dt = _dt.fromisoformat(reactivate_at.replace("Z", "+00:00"))
+                now_utc = _dt.now(_tz.utc)
+                
+                if now_utc < reactivate_dt:
+                    continue
+                
+                # Reativa a IA
+                supabase.table("conversations").update({"ai_status": "active"}).eq(
+                    "id", conv["id"]).execute()
+                
+                # Busca contato e envia mensagem
+                ct = supabase.table("contacts").select("phone").eq(
+                    "id", conv["contact_id"]).limit(1).execute()
+                if ct.data:
+                    phone = ct.data[0]["phone"]
+                    reactivate_msg = meta.get("reactivate_message", "Olá! Estou de volta para continuar seu atendimento. Como posso ajudar?")
+                    await whatsapp_client.send_text(phone, reactivate_msg, conv["workspace_id"])
+                    print(f"▶️ IA reativada para {phone}")
+                    
+            except Exception as e:
+                print(f"⚠️ reactivate error conv {conv['id']}: {e}")
+    except Exception as e:
+        print(f"⚠️ reactivate_paused_conversations error: {e}")
+
+
 async def process_flow_resumptions():
     """Retoma flows pausados por delay longo ou inatividade"""
     try:

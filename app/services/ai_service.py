@@ -376,6 +376,7 @@ async def process_message(
     media_data: Optional[bytes] = None,
     media_mime: Optional[str] = None,
     conversation_history: Optional[List[Dict]] = None,
+    context_override: str = None,
 ) -> Dict[str, Any]:
     """
     Processa uma mensagem e retorna a resposta da IA + ações tomadas
@@ -451,6 +452,7 @@ async def process_message(
         + instructions
         + kb_block
         + contact_info
+        + ("\n\nINSTRUCAO ESPECIFICA PARA ESTA MENSAGEM:\n" + context_override if context_override else "")
         + "\n\nREGRAS:\n"
         "- Responda em portugues\n"
         "- Para precos e servicos: use SEMPRE a BASE DE CONHECIMENTO acima\n"
@@ -506,6 +508,7 @@ async def process_message(
         return_intermediate_steps=True,
     )
     
+    print(f"[AI] system_prompt={len(system_prompt)} chars, msg={message_content[:50]!r}")
     try:
         result = await agent_executor.ainvoke({
             "input": message_content,
@@ -653,22 +656,9 @@ async def generate_ai_response(
         conversation_id=real_conv_id or "flow",
         message_content=message,
         conversation_history=history,
+        context_override=context_override,
     )
-    response = result.get("response", "")
-    if context_override:
-        # Re-run com contexto extra
-        try:
-            result2 = await process_message(
-                workspace_id=workspace_id,
-                contact_phone=contact.get("phone", ""),
-                conversation_id="flow",
-                message_content=f"[CONTEXTO EXTRA: {context_override}]\n{message}",
-                conversation_history=[],
-            )
-            response = result2.get("response", response)
-        except Exception:
-            pass
-    return response
+    return result.get("response", "")
 
 
 async def classify_message(message: str, categories: list, workspace_id: str) -> str:

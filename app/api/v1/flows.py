@@ -1075,14 +1075,15 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.ai_respond":
         from app.services.ai_service import generate_ai_response
         contact = context.get("contact", {})
+        print(f"🤖 ai_respond START: contact={contact} phone={contact.get('phone')} id={contact.get('id')}")
         # Verifica se IA está pausada
-        _phone = contact.get("phone", "")
-        if _phone:
+        _contact_id = contact.get("id", "")
+        if _contact_id:
             _conv = supabase.table("conversations").select("ai_status").eq(
-                "workspace_id", workspace_id).eq("contact_phone", _phone).limit(1).execute()
+                "workspace_id", workspace_id).eq("contact_id", _contact_id).limit(1).execute()
             _ai_status = (_conv.data[0] if _conv.data else {}).get("ai_status", "active")
             if _ai_status == "paused":
-                print(f"⏸️ IA pausada para {_phone} — pulando ai_respond")
+                print(f"⏸️ IA pausada — pulando ai_respond")
                 return {"status": "ai_paused_skip"}
         # Pega conteúdo: raw_media_dict para mídia, texto simples para texto
         raw_media = context.get("trigger_data", {}).get("raw_media_dict")

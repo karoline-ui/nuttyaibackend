@@ -877,8 +877,30 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     # ── WHATSAPP ──────────────────────────────────────────────────────────────
     elif node_type == "action.send_text":
-        phone   = config.get("to", "") or context.get("contact", {}).get("phone", "")
+        # Resolve {{workspace.notification_phone}}
+        _to_raw = config.get("to", "") or ""
+        if "{{workspace.notification_phone}}" in _to_raw or "{{workspace." in _to_raw:
+            from app.core.database import get_supabase as _gsb
+            _wsinfo = _gsb().table("workspaces").select("notification_phone, name").eq(
+                "id", workspace_id).limit(1).execute()
+            _wsd = _wsinfo.data[0] if _wsinfo.data else {}
+            _to_raw = _to_raw.replace("{{workspace.notification_phone}}", _wsd.get("notification_phone", ""))
+            _to_raw = _to_raw.replace("{{workspace.name}}", _wsd.get("name", ""))
+        phone   = _to_raw or context.get("contact", {}).get("phone", "")
+        contact = context.get("contact", {})
+        # Resolve variáveis de contato na mensagem
         message = config.get("message", "")
+        message = message.replace("{{contact.name}}", contact.get("name", contact.get("phone", "")))
+        message = message.replace("{{contact.phone}}", contact.get("phone", ""))
+        # Busca notes do contato
+        try:
+            from app.core.database import get_supabase as _gsb2
+            _ct = _gsb2().table("contacts").select("notes").eq(
+                "workspace_id", workspace_id).eq("phone", contact.get("phone","")).limit(1).execute()
+            _notes = (_ct.data[0] if _ct.data else {}).get("notes", "") or ""
+        except Exception:
+            _notes = ""
+        message = message.replace("{{contact.notes}}", _notes)
         print(f"📤 action.send_text: phone={phone!r} message={message[:80]!r} simulating={context.get('_simulating')}")
         if phone and message and not context.get("_simulating"):
             result = await whatsapp_client.send_text(phone, message, workspace_id)

@@ -197,18 +197,30 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         tags: lista separada por vírgulas
         """
         try:
+            # Busca dados atuais para não duplicar
+            current = supabase.table("contacts").select("name, notes, tags").eq(
+                "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+            current_data = current.data[0] if current.data else {}
+            
             update_data = {}
-            if name: update_data["name"] = name
-            if notes: update_data["notes"] = notes
-            if tags: update_data["tags"] = [t.strip() for t in tags.split(",")]
+            if name and name != current_data.get("name", ""):
+                update_data["name"] = name
+            if notes and notes != current_data.get("notes", ""):
+                update_data["notes"] = notes
+            if tags:
+                new_tags = [t.strip() for t in tags.split(",")]
+                current_tags = current_data.get("tags") or []
+                merged = list(set(current_tags + new_tags))
+                if merged != current_tags:
+                    update_data["tags"] = merged
             
             if not update_data:
-                return "Nenhum dado para atualizar"
+                return "Dados ja atualizados"
             
             supabase.table("contacts").update(update_data).eq(
                 "workspace_id", workspace_id
             ).eq("phone", contact_phone).execute()
-            return f"✅ Contato atualizado: {update_data}"
+            return f"Contato atualizado: {list(update_data.keys())}"
         except Exception as e:
             return f"❌ Erro: {str(e)}"
 

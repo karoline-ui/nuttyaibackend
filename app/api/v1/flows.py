@@ -1212,7 +1212,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.ai_reactivate":
         phone = context.get("contact", {}).get("phone", "")
         if phone:
-            supabase.table("conversations").update({"ai_status": "active"}).eq("workspace_id", workspace_id).eq("contact_phone", phone).execute()
+            supabase.table("conversations").update({"ai_status": "active"}).eq("workspace_id", workspace_id).eq("contact_id", context.get("contact",{}).get("id","")).execute()
             msg = config.get("message", "")
             if msg and not context.get("_simulating"):
                 await whatsapp_client.send_text(phone, msg, workspace_id)
@@ -1221,7 +1221,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.ai_pause":
         phone = context.get("contact", {}).get("phone", "")
         if phone:
-            supabase.table("conversations").update({"ai_status": "paused"}).eq("workspace_id", workspace_id).eq("contact_phone", phone).execute()
+            supabase.table("conversations").update({"ai_status": "paused"}).eq("workspace_id", workspace_id).eq("contact_id", context.get("contact",{}).get("id","")).execute()
         return {"status": "ai_paused"}
 
     # ── AGENDA ────────────────────────────────────────────────────────────────

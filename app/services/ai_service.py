@@ -341,11 +341,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             ct = supabase.table("contacts").select("name").eq(
                 "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
             cname = (ct.data[0] if ct.data else {}).get("name", contact_phone)
-            conv = supabase.table("conversations").select("id").eq(
-                "workspace_id", workspace_id).eq("contact_phone", contact_phone).limit(1).execute()
-            if conv.data:
+            ct_id = supabase.table("contacts").select("id").eq(
+                "workspace_id", workspace_id).eq("phone", contact_phone).limit(1).execute()
+            if ct_id.data:
                 supabase.table("conversations").update({"ai_status": "paused"}).eq(
-                    "id", conv.data[0]["id"]).execute()
+                    "workspace_id", workspace_id).eq("contact_id", ct_id.data[0]["id"]).execute()
             if notif_phone:
                 parts = ["[Transferencia para Humano - " + (ws_info.data[0] if ws_info.data else {}).get("name", "Sistema") + "]",
                          "Cliente: " + cname + " (" + contact_phone + ")",

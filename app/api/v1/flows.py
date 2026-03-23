@@ -97,8 +97,19 @@ async def list_flows(workspace_id: str):
     result = supabase.table("flows").select("*").eq(
         "workspace_id", workspace_id
     ).order("created_at", desc=True).execute()
-    c_set(ck, result.data, ttl=20)
-    return result.data
+    
+    # Adiciona run_count para cada flow
+    flows = result.data or []
+    for flow in flows:
+        try:
+            cnt = supabase.table("flow_executions").select("id", count="exact").eq(
+                "flow_id", flow["id"]).execute()
+            flow["run_count"] = cnt.count or 0
+        except Exception:
+            flow["run_count"] = 0
+    
+    c_set(ck, flows, ttl=20)
+    return flows
 
 
 @router.post("")

@@ -961,8 +961,15 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     elif node_type == "action.send_image":
         phone = config.get("to", "") or context.get("contact", {}).get("phone", "")
-        if phone and config.get("media_url") and not context.get("_simulating"):
-            await whatsapp_client.send_image(phone, config["media_url"], config.get("caption",""), workspace_id)
+        # Resolve media_file_id para URL pública
+        media_url = config.get("media_url", "")
+        if not media_url and config.get("media_file_id"):
+            mf = supabase.table("media_files").select("public_url").eq(
+                "id", config["media_file_id"]).limit(1).execute()
+            if mf.data:
+                media_url = mf.data[0].get("public_url", "")
+        if phone and media_url and not context.get("_simulating"):
+            await whatsapp_client.send_image(phone, media_url, config.get("caption",""), workspace_id)
         return {"status": "sent", "type": "image"}
 
     elif node_type == "action.send_document":

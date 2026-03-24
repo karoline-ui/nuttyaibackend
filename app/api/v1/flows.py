@@ -791,6 +791,10 @@ async def run_flow(
                     next_id = chosen[0].get("target") if chosen else None
                     print(f"🔗 condition result={r} true_targets={[e.get('target') for e in true_edges]} false_targets={[e.get('target') for e in false_edges]} → next={next_id}")
             else:
+                if current_node and current_node.get("id") != node_id:
+                    # current_node já foi atualizado pelo bloco anterior (ex: classify routing)
+                    print(f"🔗 próximo nó: '{current_node.get('id')}' (via routing)")
+                    continue
                 next_edges = [e for e in edges if e.get("source") == node_id]
                 next_id = next_edges[0].get("target") if next_edges else None
             print(f"🔗 próximo nó: {next_id!r}")

@@ -923,12 +923,23 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     elif node_type == "condition.subflow":
         subflow_id = config.get("subflow_id", "")
-        if subflow_id and not context.get("_simulating"):
+        print(f"🔀 condition.subflow: subflow_id={subflow_id!r} simulating={context.get('_simulating')}")
+        if not subflow_id:
+            print(f"❌ condition.subflow: subflow_id vazio! config={config}")
+            return {"status": "subflow_error", "error": "subflow_id vazio"}
+        if not context.get("_simulating"):
             sub = supabase.table("flows").select("*").eq("id", subflow_id).limit(1).execute()
+            print(f"🔀 subflow query: {len(sub.data) if sub.data else 0} registros")
             if sub.data:
+                sub_flow = sub.data[0]
+                sub_nodes = sub_flow.get("nodes") or []
+                sub_edges = sub_flow.get("edges") or []
+                print(f"🔀 subflow '{sub_flow.get('name')}': {len(sub_nodes)} nós, {len(sub_edges)} edges")
                 sub_context = {**context, "variables": dict(context.get("variables", {}))}
-                for sub_node_data in ((sub.data[0] if sub.data else {}).get("nodes") or []):
-                    await execute_node(sub_node_data, sub_context, workspace_id)
+                # Executa subflow seguindo edges (não só nós em ordem)
+                await run_flow(subflow_id, workspace_id, sub_context)
+            else:
+                print(f"❌ condition.subflow: subflow {subflow_id} não encontrado!")
         return {"status": "subflow_called", "subflow_id": subflow_id}
 
     # ── WHATSAPP ──────────────────────────────────────────────────────────────

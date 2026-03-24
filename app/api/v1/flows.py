@@ -1226,7 +1226,18 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     elif node_type == "action.ai_classify":
         from app.services.ai_service import classify_message
-        message = context.get("message", {}).get("content", "") or context.get("trigger_data", {}).get("message", "")
+        # Pega mensagem de todas as fontes possíveis
+        _msg_obj = context.get("message", {})
+        if isinstance(_msg_obj, dict):
+            message = _msg_obj.get("content", "") or _msg_obj.get("text", "")
+        else:
+            message = str(_msg_obj) if _msg_obj else ""
+        if not message:
+            message = context.get("trigger_data", {}).get("message", "")
+        if not message:
+            # Usa última resposta da IA como contexto
+            message = context.get("variables", {}).get("_last_message", "")
+        print(f"🏷️ classify message sources: trigger_data={context.get('trigger_data',{}).get('message','')[:30]!r}")
         # categories pode ser lista ou string separada por vírgula
         _cats_raw = config.get("categories", "")
         if isinstance(_cats_raw, list):
@@ -1267,7 +1278,18 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     elif node_type == "action.ai_sentiment":
         from app.services.ai_service import analyze_sentiment
-        message = context.get("message", {}).get("content", "") or context.get("trigger_data", {}).get("message", "")
+        # Pega mensagem de todas as fontes possíveis
+        _msg_obj = context.get("message", {})
+        if isinstance(_msg_obj, dict):
+            message = _msg_obj.get("content", "") or _msg_obj.get("text", "")
+        else:
+            message = str(_msg_obj) if _msg_obj else ""
+        if not message:
+            message = context.get("trigger_data", {}).get("message", "")
+        if not message:
+            # Usa última resposta da IA como contexto
+            message = context.get("variables", {}).get("_last_message", "")
+        print(f"🏷️ classify message sources: trigger_data={context.get('trigger_data',{}).get('message','')[:30]!r}")
         field   = config.get("output_field", "sentimento")
         escalate_on = [s.strip() for s in config.get("escalate_on", "negativo,frustrado").split(",")]
         if message and not context.get("_simulating"):

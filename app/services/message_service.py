@@ -333,7 +333,7 @@ async def handle_incoming_message(
             "trigger_data": trigger_data,
             "contact":      {"phone": phone, "name": contact.get("name", ""), "tags": contact.get("tags", []), "id": contact_id},
             "message":      {"content": content, "type": message_type},
-            "variables":    {},
+            "variables":    {"_last_message": content},
             "_simulating":  False,
         }
         try:

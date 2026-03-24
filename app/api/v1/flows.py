@@ -1204,8 +1204,10 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
     elif node_type == "action.ai_classify":
         from app.services.ai_service import classify_message
         message = context.get("message", {}).get("content", "") or context.get("trigger_data", {}).get("message", "")
-        cats    = config.get("categories", "").split(",")
-        field   = config.get("output_field", "classification")
+        cats    = [c.strip() for c in config.get("categories", "").split(",") if c.strip()]
+        # Suporta tanto output_field quanto var_name
+        field   = config.get("output_field") or config.get("var_name") or "classification"
+        print(f"🏷️ ai_classify: cats={cats} field={field!r} message={message[:50]!r}")
         if message and not context.get("_simulating"):
             result = await classify_message(message, cats, workspace_id)
             context["variables"][field] = result

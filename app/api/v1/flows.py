@@ -668,7 +668,7 @@ async def run_flow(
             }
             
             try:
-                result = await execute_node(current_node, context, workspace_id)
+                result = await execute_node(current_node, context, workspace_id, flow_id)
                 context["variables"][f"node_{node_id}"] = result
                 node_log["status"] = "success"
                 node_log["output"] = result
@@ -699,7 +699,7 @@ async def run_flow(
                 break
             
             # Se for condição, decide próximo node
-            node_type_check = current_node.get("type", "") or current_node.get("data", {}).get("nodeType", "")
+            node_type_check = current_node.get("data", {}).get("nodeType", "") or current_node.get("type", "")
             print(f"🔗 nó {node_label!r} type={node_type_check!r} result={str(result)[:100]}")
             # Para o flow se o nó pediu (ex: inactivity, delay longo)
             if isinstance(result, dict) and result.get("_stop_flow"):

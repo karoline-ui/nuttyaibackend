@@ -125,7 +125,7 @@ async def handle_incoming_message(
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
         "direction":    "inbound",
-        "content":      str(content)[:4000] if content else f"[{message_type}]",
+        "content":      str(content)[:8000] if content else f"[{message_type}]",
         "type":         message_type,
         "is_ai":        False,
         "created_at":   datetime.now().isoformat(),
@@ -213,6 +213,7 @@ async def handle_incoming_message(
 
     # 4b. IA pausada — atendimento humano
     if ai_status == "paused":
+        print(f"⏸️ IA pausada para {phone} — atendimento humano ativo")
         return  # Atendimento humano ativo — não responder
 
     # 5. Seleciona o flow correto com prioridade de triggers

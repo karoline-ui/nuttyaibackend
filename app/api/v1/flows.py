@@ -813,7 +813,7 @@ async def run_flow(
             }).eq("id", exec_id).execute()
 
 
-async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
+async def execute_node(node: Dict, context: Dict, workspace_id: str, flow_id: str = "") -> Dict:
     """Executa um nó individual — suporte a todos os 45 tipos"""
     node_type = node.get("data", {}).get("nodeType") or node.get("type", "")
     config    = interpolate_variables(node.get("data", {}).get("config", {}), context)

@@ -519,8 +519,22 @@ async def process_message(
     
     # Construir histórico de conversa
     chat_history = []
+    # Frases que não devem entrar no histórico como contexto da IA
+    _ignore_phrases = [
+        "transferindo para atendente",
+        "horario de atendimento",
+        "vou continuar seu atendimento",
+        "sua duvida foi encaminhada",
+        "foi encaminhada ao medico",
+        "nao altere o medicamento",
+    ]
     if conversation_history:
         for msg in conversation_history[-20:]:  # últimas 20 msgs (10 trocas)
+            # Ignora mensagens de sistema/flow para não contaminar o contexto
+            if msg.get("direction") == "outbound" and msg.get("is_ai"):
+                content_lower = (msg.get("content") or "").lower()
+                if any(p in content_lower for p in _ignore_phrases):
+                    continue
             if msg["direction"] == "inbound":
                 chat_history.append(HumanMessage(content=msg["content"]))
             else:

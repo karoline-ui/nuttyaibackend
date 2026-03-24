@@ -709,18 +709,29 @@ async def run_flow(
             if node_type_check == "action.ai_classify" and isinstance(result, dict) and result.get("category"):
                 category = result["category"].strip().lower()
                 all_edges = [e for e in edges if e.get("source") == node_id]
-                # Procura edge cujo label bate com a categoria
-                matched_edge = next((e for e in all_edges if str(e.get("label","")).strip().lower() == category), None)
-                if not matched_edge:
-                    # Procura nó destino cujo label contém a categoria
-                    for e in all_edges:
-                        target_node = next((n for n in nodes if n["id"] == e.get("target")), {})
-                        target_label = target_node.get("data", {}).get("label", "").lower()
-                        if category in target_label:
-                            matched_edge = e
-                            break
-                next_id = matched_edge.get("target") if matched_edge else (all_edges[0].get("target") if all_edges else None)
-                print(f"🏷️ ai_classify roteando categoria={category!r} → next={next_id!r}")
+                
+                # Percorre todos os nós if_ encadeados para achar o que bate
+                # Estratégia: procura nó condition.if cujo config.value == category
+                matched_id = None
+                visited = set()
+                check_id = all_edges[0].get("target") if all_edges else None
+                while check_id and check_id not in visited:
+                    visited.add(check_id)
+                    check_node = next((n for n in nodes if n["id"] == check_id), None)
+                    if not check_node:
+                        break
+                    nt = check_node.get("data", {}).get("nodeType", "")
+                    cfg = check_node.get("data", {}).get("config", {})
+                    if nt == "condition.if" and cfg.get("value", "").lower() == category:
+                        matched_id = check_id
+                        break
+                    # Segue o false_edge para o próximo if
+                    false_edges = [e for e in edges if e.get("source") == check_id and 
+                                   str(e.get("sourceHandle","")).lower() in ("false","no","0","b")]
+                    check_id = false_edges[0].get("target") if false_edges else None
+                
+                next_id = matched_id or (all_edges[0].get("target") if all_edges else None)
+                print(f"🏷️ ai_classify categoria={category!r} → if_node={next_id!r}")
                 if next_id:
                     current_node = next((n for n in nodes if n["id"] == next_id), None)
                 else:

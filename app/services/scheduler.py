@@ -149,13 +149,15 @@ async def send_appointment_reminders():
     Para consultas nas próximas 24h que ainda não receberam lembrete
     """
     supabase = get_supabase()
-    now = datetime.now()
-    in_24h = (now + timedelta(hours=24)).isoformat()
-    in_23h = (now + timedelta(hours=23)).isoformat()
+    from datetime import timezone as _tz
+    now = datetime.now(_tz.utc)
+    # Janela: consultas que começam entre 30min e 25h a partir de agora
+    window_start = (now + timedelta(minutes=30)).isoformat()
+    window_end = (now + timedelta(hours=25)).isoformat()
 
     appointments = supabase.table("appointments").select(
         "*, contacts(phone, name), workspaces(ai_persona)"
-    ).gte("start_time", in_23h).lte("start_time", in_24h).eq(
+    ).gte("start_time", window_start).lte("start_time", window_end).eq(
         "status", "scheduled"
     ).eq("reminder_sent", False).execute()
 

@@ -1225,7 +1225,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         return {"status": "ai_respond_simulated"}
 
     elif node_type == "action.ai_classify":
-        from app.services.ai_service import classify_message
+        print(f"🏷️ ai_classify INÍCIO config={config}")
         # Pega mensagem de todas as fontes possíveis
         _msg_obj = context.get("message", {})
         if isinstance(_msg_obj, dict):
@@ -1237,7 +1237,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         if not message:
             # Usa última resposta da IA como contexto
             message = context.get("variables", {}).get("_last_message", "")
-        print(f"🏷️ classify message sources: trigger_data={context.get('trigger_data',{}).get('message','')[:30]!r}")
+        print(f"🏷️ classify message={message[:50]!r} trigger_data={context.get('trigger_data',{}).get('message','')[:30]!r}")
         # categories pode ser lista ou string separada por vírgula
         _cats_raw = config.get("categories", "")
         if isinstance(_cats_raw, list):
@@ -1248,6 +1248,7 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         field   = config.get("output_field") or config.get("var_name") or "classification"
         print(f"🏷️ ai_classify: cats={cats} field={field!r} message={message[:50]!r}")
         if message and not context.get("_simulating"):
+            from app.services.ai_service import classify_message
             result = await classify_message(message, cats, workspace_id)
             context["variables"][field] = result
             print(f"🏷️ ai_classify resultado: {result!r} → variavel={field!r}")

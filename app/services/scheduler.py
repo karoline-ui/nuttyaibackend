@@ -236,16 +236,27 @@ async def reactivate_paused_conversations():
                     import json
                     meta = json.loads(meta)
                 
-                reactivate_at = meta.get("reactivate_at")
-                if not reactivate_at:
-                    continue
-                
                 from datetime import datetime as _dt
-                reactivate_dt = _dt.fromisoformat(reactivate_at.replace("Z", "+00:00"))
                 now_utc = _dt.now(_tz.utc)
-                
-                if now_utc < reactivate_dt:
-                    continue
+
+                reactivate_at = meta.get("reactivate_at") if isinstance(meta, dict) else None
+                if reactivate_at:
+                    reactivate_dt = _dt.fromisoformat(reactivate_at.replace("Z", "+00:00"))
+                    if now_utc < reactivate_dt:
+                        continue
+                else:
+                    # Fallback: reativa após 30min desde que pausou (updated_at)
+                    paused_at_str = conv.get("updated_at", "")
+                    if not paused_at_str:
+                        continue
+                    try:
+                        paused_at = _dt.fromisoformat(paused_at_str.replace("Z", "+00:00"))
+                        if paused_at.tzinfo is None:
+                            paused_at = paused_at.replace(tzinfo=_tz.utc)
+                        if now_utc < paused_at + _td(minutes=30):
+                            continue
+                    except Exception:
+                        continue
                 
                 # Reativa a IA
                 supabase.table("conversations").update({"ai_status": "active"}).eq(

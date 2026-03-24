@@ -30,11 +30,9 @@ async def start_scheduler():
         IntervalTrigger(seconds=settings.CAMPAIGN_CHECK_INTERVAL),
         id="campaigns", replace_existing=True,
     )
-    scheduler.add_job(
-        send_appointment_reminders,
-        IntervalTrigger(minutes=5),
-        id="apt_reminders", replace_existing=True,
-    )
+    # Lembretes via flow (trigger.appointment_created + condition.delay)
+    # O scheduler de reminders está desativado para evitar duplicação
+    # scheduler.add_job(send_appointment_reminders, ...)
     scheduler.add_job(
         process_scheduled_flows,
         IntervalTrigger(minutes=1),
@@ -199,11 +197,21 @@ async def send_appointment_reminders():
             if not update_result.data:
                 continue
 
-            await whatsapp_client.send_text(
-                phone=phone,
-                message=message,
-                workspace_id=apt["workspace_id"],
-            )
+            # Envia com botões
+            try:
+                await whatsapp_client.send_buttons(
+                    phone=phone,
+                    message=message,
+                    buttons=["✅ Confirmar", "❌ Cancelar"],
+                    workspace_id=apt["workspace_id"],
+                )
+            except Exception:
+                # Fallback para texto simples se botões falharem
+                await whatsapp_client.send_text(
+                    phone=phone,
+                    message=message,
+                    workspace_id=apt["workspace_id"],
+                )
 
         except Exception as e:
             print(f"Apt reminder failed {apt['id']}: {e}")

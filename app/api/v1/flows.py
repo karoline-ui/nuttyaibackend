@@ -734,11 +734,24 @@ async def run_flow(
                 print(f"🏷️ ai_classify categoria={category!r} → if_node={next_id!r}")
                 if next_id:
                     current_node = next((n for n in nodes if n["id"] == next_id), None)
-                    print(f"🏷️ próximo current_node={current_node.get('id') if current_node else None}")
-                    node_id = next_id  # atualiza node_id para o visited check
+                    print(f"🏷️ executando if_node={next_id!r} current={current_node.get('id') if current_node else None}")
+                    # Executa o nó if diretamente sem passar pelo continue
+                    if current_node:
+                        _if_result = await execute_node(current_node, context, workspace_id, flow_id)
+                        visited.add(next_id)
+                        context["variables"][f"node_{next_id}"] = _if_result
+                        print(f"🏷️ if_node result={_if_result}")
+                        # Roteia baseado no resultado do if
+                        _if_cond = _if_result.get("result", False)
+                        _if_edges = [e for e in edges if e.get("source") == next_id]
+                        _true_e = [e for e in _if_edges if str(e.get("sourceHandle","")).lower() in ("true","yes","1","a")]
+                        _false_e = [e for e in _if_edges if str(e.get("sourceHandle","")).lower() in ("false","no","0","b")]
+                        _chosen = _true_e if _if_cond else _false_e
+                        _next_id = _chosen[0].get("target") if _chosen else (_if_edges[0].get("target") if _if_edges else None)
+                        print(f"🏷️ if_node cond={_if_cond} → next={_next_id!r}")
+                        current_node = next((n for n in nodes if n["id"] == _next_id), None) if _next_id else None
                 else:
-                    break
-                continue
+                    current_node = None
 
             if node_type_check.startswith("condition."):
                 next_id = result.get("next_node_id")

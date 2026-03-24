@@ -1343,7 +1343,10 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
                 "status":       "scheduled",
                 "professional": config.get("professional", ""),
                 "start_time":   context["variables"].get("appointment_time", datetime.now().isoformat()),
-                "duration_minutes": int(config.get("duration_minutes", 60)),
+                "end_time":     (datetime.fromisoformat(
+                    context["variables"].get("appointment_time", datetime.now().isoformat()).replace("Z","")
+                ) + __import__("datetime").timedelta(minutes=int(config.get("duration_minutes", 50)))).isoformat(),
+                "duration_minutes": int(config.get("duration_minutes", 50)),
                 "reminder_sent": False,
             }).execute()
             apt_id = (apt_result.data[0] if apt_result.data else {}).get("id")

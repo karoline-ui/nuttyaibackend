@@ -154,7 +154,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
                 return f"Infelizmente {date} está totalmente ocupado. Deseja verificar outra data?"
 
             slots_str = ", ".join(free_slots)
-            return f"Horários disponíveis em {date}: {slots_str}"
+            day_names_pt = ["Segunda-feira","Terca-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sabado","Domingo"]
+            weekday_num = _dt.strptime(date, "%Y-%m-%d").weekday()
+            day_name_pt = day_names_pt[weekday_num]
+            date_fmt = _dt.strptime(date, "%Y-%m-%d").strftime("%d/%m/%Y")
+            return f"{day_name_pt} {date_fmt}: {slots_str}"
         except Exception as e:
             return f"❌ Erro ao verificar agenda: {str(e)}"
 

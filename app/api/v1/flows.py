@@ -27,6 +27,7 @@ AVAILABLE_NODES = {
     "trigger.new_contact":         {"label": "Novo Contato",          "category": "trigger", "icon": "UserPlus"},
     "trigger.tag_added":           {"label": "Tag Adicionada",        "category": "trigger", "icon": "Tag"},
     "trigger.appointment_created": {"label": "Agendamento Criado",    "category": "trigger", "icon": "Calendar"},
+    "trigger.subflow_called":      {"label": "Subflow Chamado",       "category": "trigger", "icon": "GitBranch"},
     "trigger.schedule":            {"label": "Agendado (Cron)",       "category": "trigger", "icon": "Timer"},
     "trigger.webhook":             {"label": "Webhook Recebido",      "category": "trigger", "icon": "Zap"},
     # LÓGICA

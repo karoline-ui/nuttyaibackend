@@ -397,7 +397,6 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         send_media_file,
         search_knowledge_base,
         create_reminder,
-        notify_responsible,
         transfer_to_human,
     ]
 

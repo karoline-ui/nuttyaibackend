@@ -87,8 +87,32 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
                 "service_type": service_type,
                 "notes": notes,
                 "source": "ai",
-                "status": "scheduled"
+                "status": "scheduled",
+                "reminder_sent": False,
             }).execute()
+            
+            # Dispara flow de lembrete
+            apt_id = (result.data[0] if result.data else {}).get("id")
+            if apt_id:
+                try:
+                    reminder_flows = supabase.table("flows").select("id, nodes").eq(
+                        "workspace_id", workspace_id).eq("is_active", True).execute()
+                    for rf in (reminder_flows.data or []):
+                        nodes_check = rf.get("nodes", [])
+                        if any(n.get("data",{}).get("nodeType") == "trigger.appointment_created" for n in nodes_check):
+                            from app.api.v1.flows import run_flow
+                            import asyncio as _asyncio
+                            apt_ctx = {
+                                "contact": {"phone": contact_phone, "id": contact.data[0]["id"], "name": contact.data[0].get("name","")},
+                                "trigger_data": {"appointment_id": apt_id},
+                                "variables": {"appointment_id": apt_id, "appointment_time": start_utc},
+                                "_simulating": False,
+                            }
+                            _asyncio.create_task(run_flow(rf["id"], workspace_id, apt_ctx))
+                            print(f"📅 Flow de lembrete disparado: {apt_id}")
+                            break
+                except Exception as _fe:
+                    print(f"⚠️ Flow lembrete error: {_fe}")
             
             return f"✅ Agendamento criado: {title} para {start_datetime}"
         except Exception as e:

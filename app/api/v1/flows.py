@@ -1254,8 +1254,9 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         contact = context.get("contact", {})
         contact_result = supabase.table("contacts").select("id").eq("workspace_id", workspace_id).eq("phone", contact.get("phone","")).limit(1).execute()
         contact_id = (contact_result.data[0] if contact_result.data else {}).get("id") if contact_result.data else None
+        apt_id = None
         if contact_id:
-            supabase.table("appointments").insert({
+            apt_result = supabase.table("appointments").insert({
                 "workspace_id": workspace_id,
                 "contact_id":   contact_id,
                 "title":        config.get("title", "Consulta"),
@@ -1263,8 +1264,35 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
                 "professional": config.get("professional", ""),
                 "start_time":   context["variables"].get("appointment_time", datetime.now().isoformat()),
                 "duration_minutes": int(config.get("duration_minutes", 60)),
+                "reminder_sent": False,
             }).execute()
-        return {"status": "appointment_created"}
+            apt_id = (apt_result.data[0] if apt_result.data else {}).get("id")
+            
+            # Dispara flow de lembrete (trigger.appointment_created)
+            if apt_id and not context.get("_simulating"):
+                try:
+                    reminder_flows = supabase.table("flows").select("id").eq(
+                        "workspace_id", workspace_id).eq("is_active", True).execute()
+                    for rf in (reminder_flows.data or []):
+                        rf_data = supabase.table("flows").select("nodes").eq(
+                            "id", rf["id"]).limit(1).execute()
+                        if rf_data.data:
+                            nodes_check = rf_data.data[0].get("nodes", [])
+                            if any(n.get("data",{}).get("nodeType") == "trigger.appointment_created" for n in nodes_check):
+                                apt_context = {
+                                    "contact": context.get("contact", {}),
+                                    "trigger_data": {"appointment_id": apt_id, "phone": context.get("contact",{}).get("phone","")},
+                                    "variables": {"appointment_id": apt_id, **context.get("variables", {})},
+                                    "_simulating": False,
+                                }
+                                import asyncio as _asyncio
+                                _asyncio.create_task(run_flow(rf["id"], workspace_id, apt_context))
+                                print(f"📅 Flow de lembrete disparado para agendamento {apt_id}")
+                                break
+                except Exception as _e:
+                    print(f"⚠️ Erro ao disparar flow de lembrete: {_e}")
+
+        return {"status": "appointment_created", "appointment_id": apt_id}
 
     elif node_type == "action.cancel_appointment":
         contact = context.get("contact", {})

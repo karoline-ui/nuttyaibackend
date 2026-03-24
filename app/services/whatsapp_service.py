@@ -102,11 +102,22 @@ class WhatsAppService:
         Envia mensagem com botões interativos (reply buttons).
         Payload UazAP v2 / Evolution API padrão.
         """
+        # Formato UazAP: "texto|id" — máximo 3 botões
+        choices = []
+        for i, btn in enumerate(buttons[:3]):
+            if isinstance(btn, dict):
+                text = btn.get("text", str(btn))
+                btn_id = btn.get("id", f"btn_{i}")
+            else:
+                text = str(btn)
+                btn_id = f"btn_{i}"
+            choices.append(f"{text}|{btn_id}")
+        
         return await self._post("/send/menu", {
             "number": phone,
             "type": "button",
             "text": message,
-            "choices": [f"{btn}|btn_{i}" for i, btn in enumerate(buttons[:3])],
+            "choices": choices,
             "delay": 1000,
         }, workspace_id=workspace_id)
 

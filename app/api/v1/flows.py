@@ -734,6 +734,8 @@ async def run_flow(
                 print(f"🏷️ ai_classify categoria={category!r} → if_node={next_id!r}")
                 if next_id:
                     current_node = next((n for n in nodes if n["id"] == next_id), None)
+                    print(f"🏷️ próximo current_node={current_node.get('id') if current_node else None}")
+                    node_id = next_id  # atualiza node_id para o visited check
                 else:
                     break
                 continue

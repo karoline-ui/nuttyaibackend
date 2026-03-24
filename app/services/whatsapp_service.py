@@ -272,6 +272,9 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
 
         # Extrair conteúdo — UazAP v2 usa message.content diretamente
         raw_content  = msg.get("content", "") or msg.get("body", "") or msg.get("text", "")
+        # Se content é dict com "text" (ex: mensagem com contextInfo), extrai só o texto
+        if isinstance(raw_content, dict) and "text" in raw_content:
+            raw_content = raw_content["text"]
         message_type = "text"
         media_data   = None
         media_mime   = None

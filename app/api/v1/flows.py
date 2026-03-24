@@ -1229,18 +1229,18 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
 
     elif node_type == "action.ai_classify":
         print(f"🏷️ ai_classify INÍCIO config={config}")
-        # Pega mensagem de todas as fontes possíveis
-        _msg_obj = context.get("message", {})
-        if isinstance(_msg_obj, dict):
-            message = _msg_obj.get("content", "") or _msg_obj.get("text", "")
-        else:
-            message = str(_msg_obj) if _msg_obj else ""
+        # Pega mensagem — sempre do trigger_data que é string garantida
+        message = context.get("trigger_data", {}).get("message", "")
         if not message:
-            message = context.get("trigger_data", {}).get("message", "")
+            _msg_obj = context.get("message", {})
+            if isinstance(_msg_obj, dict):
+                message = _msg_obj.get("content", "") or _msg_obj.get("text", "")
+            elif isinstance(_msg_obj, str):
+                message = _msg_obj
         if not message:
-            # Usa última resposta da IA como contexto
             message = context.get("variables", {}).get("_last_message", "")
-        print(f"🏷️ classify message={message[:50]!r} trigger_data={context.get('trigger_data',{}).get('message','')[:30]!r}")
+        message = str(message) if message else ""
+        print(f"🏷️ classify message={message[:50]!r}")
         # categories pode ser lista ou string separada por vírgula
         _cats_raw = config.get("categories", "")
         if isinstance(_cats_raw, list):

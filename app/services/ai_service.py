@@ -526,7 +526,13 @@ async def process_message(
         "vou continuar seu atendimento",
         "sua duvida foi encaminhada",
         "foi encaminhada ao medico",
+        "foi encaminhada ao responsavel",
         "nao altere o medicamento",
+        "não altere o medicamento",
+        "solicitação sobre lola foi encaminhada",
+        "solicitação sobre alana foi encaminhada",
+        "sua solicitacao foi encaminhada",
+        "encaminhada ao médico responsável",
     ]
     if conversation_history:
         for msg in conversation_history[-20:]:  # últimas 20 msgs (10 trocas)

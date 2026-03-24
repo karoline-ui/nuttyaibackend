@@ -40,6 +40,16 @@ async def start_scheduler():
         IntervalTrigger(minutes=1),
         id="scheduled_flows", replace_existing=True,
     )
+    scheduler.add_job(
+        reactivate_paused_conversations,
+        IntervalTrigger(minutes=1),
+        id="reactivate_paused", replace_existing=True,
+    )
+    scheduler.add_job(
+        process_flow_resumptions,
+        IntervalTrigger(minutes=1),
+        id="flow_resumptions", replace_existing=True,
+    )
     scheduler.start()
     print("✅ Scheduler started")
 

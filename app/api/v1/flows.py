@@ -673,6 +673,9 @@ async def run_flow(
                 node_log["status"] = "success"
                 node_log["output"] = result
             except Exception as node_err:
+                import traceback
+                print(f"❌ execute_node ERRO em nó: {node_err}")
+                print(traceback.format_exc())
                 node_log["status"] = "error"
                 node_log["error"] = str(node_err)
                 node_log["output"] = {}

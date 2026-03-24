@@ -702,6 +702,28 @@ async def run_flow(
             if isinstance(result, dict) and result.get("_stop_flow"):
                 print(f"⏹️ Flow pausado por {node_type_check}")
                 break
+            # Roteamento por categoria (ai_classify)
+            if node_type_check == "action.ai_classify" and isinstance(result, dict) and result.get("category"):
+                category = result["category"].strip().lower()
+                all_edges = [e for e in edges if e.get("source") == node_id]
+                # Procura edge cujo label bate com a categoria
+                matched_edge = next((e for e in all_edges if str(e.get("label","")).strip().lower() == category), None)
+                if not matched_edge:
+                    # Procura nó destino cujo label contém a categoria
+                    for e in all_edges:
+                        target_node = next((n for n in nodes if n["id"] == e.get("target")), {})
+                        target_label = target_node.get("data", {}).get("label", "").lower()
+                        if category in target_label:
+                            matched_edge = e
+                            break
+                next_id = matched_edge.get("target") if matched_edge else (all_edges[0].get("target") if all_edges else None)
+                print(f"🏷️ ai_classify roteando categoria={category!r} → next={next_id!r}")
+                if next_id:
+                    current_node = next((n for n in nodes if n["id"] == next_id), None)
+                else:
+                    break
+                continue
+
             if node_type_check.startswith("condition."):
                 next_id = result.get("next_node_id")
                 if not next_id and "result" in result:
@@ -1212,7 +1234,9 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str) -> Dict:
         if message and not context.get("_simulating"):
             result = await classify_message(message, cats, workspace_id)
             context["variables"][field] = result
-            return {"status": "classified", "result": result}
+            print(f"🏷️ ai_classify resultado: {result!r} → variavel={field!r}")
+            # Navega para o edge cujo label ou sourceHandle bate com a categoria
+            return {"status": "classified", "result": result, "category": result}
         return {"status": "classify_simulated"}
 
     elif node_type == "action.ai_extract":

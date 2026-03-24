@@ -291,15 +291,41 @@ async def handle_incoming_message(
                         break
             else:
                 # Busca o flow keyword correspondente à tag ativa
+                contact_tags = contact.get("tags") or []
                 for flow in all_flows.data:
                     nodes = flow.get("nodes", [])
                     for node in nodes:
                         nd = node.get("data", {})
                         if nd.get("nodeType") == "trigger.keyword":
-                            matched_flow = flow
-                            break
+                            # Verifica se a keyword do flow bate com alguma tag ativa
+                            kw_raw = nd.get("config", {}).get("keyword", "").lower()
+                            keywords = [k.strip() for k in kw_raw.split(",") if k.strip()]
+                            # Para medicamento: flow tem keyword medicamento e contato tem tag duvida_medicamento
+                            tag_keyword_map = {
+                                "duvida_medicamento": ["medicamento","remedio","dose","dosagem","medicacao","tratamento"],
+                                "transferencia_humano": ["atendente","humano","falar com pessoa"]
+                            }
+                            flow_match = False
+                            for tag in contact_tags:
+                                expected_kws = tag_keyword_map.get(tag, [])
+                                if any(kw in keywords for kw in expected_kws):
+                                    flow_match = True
+                                    break
+                            if flow_match:
+                                matched_flow = flow
+                                break
                     if matched_flow:
                         break
+                # Se não achou por keyword, pega qualquer keyword flow
+                if not matched_flow:
+                    for flow in all_flows.data:
+                        nodes = flow.get("nodes", [])
+                        for node in nodes:
+                            if node.get("data", {}).get("nodeType") == "trigger.keyword":
+                                matched_flow = flow
+                                break
+                        if matched_flow:
+                            break
 
     if matched_flow:
         print(f"✅ Flow matched: {matched_flow.get('name', matched_flow.get('id'))}")

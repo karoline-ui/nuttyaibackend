@@ -1115,9 +1115,14 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str, flow_id: st
             buttons = [b.get("text", b) if isinstance(b, dict) else b for b in config["buttons"] if b]
         else:
             buttons = [b for b in [config.get("btn1"), config.get("btn2"), config.get("btn3")] if b]
-        # Substitui variáveis de contato na mensagem
+        # Substitui variáveis de contato e agendamento na mensagem
         contact = context.get("contact", {})
+        variables = context.get("variables", {})
         message = message.replace("{{contact.name}}", contact.get("name", contact.get("phone", "")))
+        message = message.replace("{{appointment.title}}", variables.get("appointment_title", ""))
+        message = message.replace("{{appointment.start_time}}", variables.get("appointment_hour", variables.get("appointment_time", "")))
+        message = message.replace("{{appointment.date}}", variables.get("appointment_date", ""))
+        message = message.replace("{{appointment.hour}}", variables.get("appointment_hour", ""))
         if phone and message and buttons and not context.get("_simulating"):
             await whatsapp_client.send_buttons(phone, message, buttons, workspace_id)
         return {"status": "sent", "type": "buttons", "buttons": buttons}

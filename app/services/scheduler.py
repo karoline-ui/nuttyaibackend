@@ -31,8 +31,16 @@ async def start_scheduler():
         id="campaigns", replace_existing=True,
     )
     # Lembretes via flow (trigger.appointment_created + condition.delay)
-    # O scheduler de reminders está desativado para evitar duplicação
-    # scheduler.add_job(send_appointment_reminders, ...)
+    scheduler.add_job(
+        send_appointment_reminders,
+        IntervalTrigger(minutes=5),
+        id="apt_reminders", replace_existing=True,
+    )
+    scheduler.add_job(
+        trigger_reminder_flows,
+        IntervalTrigger(minutes=5),
+        id="reminder_flows", replace_existing=True,
+    )
     scheduler.add_job(
         process_scheduled_flows,
         IntervalTrigger(minutes=1),
@@ -140,6 +148,86 @@ async def process_scheduled_campaigns():
                 ))
         except Exception as e:
             print(f"Campaign scheduled launch failed {campaign['id']}: {e}")
+
+async def trigger_reminder_flows():
+    """Dispara o flow de lembrete para consultas próximas — usa nós customizados com templates e botões"""
+    try:
+        from app.api.v1.flows import run_flow
+        from datetime import timezone as _tz, timedelta as _td
+        supabase = get_supabase()
+        now = datetime.now(_tz.utc)
+
+        # Janela: consultas entre 30min e 25h a partir de agora
+        window_start = (now + _td(minutes=30)).isoformat()
+        window_end   = (now + _td(hours=25)).isoformat()
+
+        apts = supabase.table("appointments").select(
+            "*, contacts(phone, name, id)"
+        ).gte("start_time", window_start).lte("start_time", window_end).eq(
+            "status", "scheduled"
+        ).eq("reminder_sent", False).execute()
+
+        for apt in (apts.data or []):
+            try:
+                contact = apt.get("contacts") or {}
+                phone   = contact.get("phone")
+                if not phone:
+                    continue
+
+                workspace_id = apt["workspace_id"]
+
+                # Busca flow de lembrete (trigger.appointment_created)
+                flows = supabase.table("flows").select("id, nodes").eq(
+                    "workspace_id", workspace_id).eq("is_active", True).execute()
+
+                reminder_flow = None
+                for f in (flows.data or []):
+                    if any(n.get("data", {}).get("nodeType") == "trigger.appointment_created"
+                           for n in (f.get("nodes") or [])):
+                        reminder_flow = f
+                        break
+
+                if not reminder_flow:
+                    continue
+
+                # Marca como enviado ANTES para evitar duplicação
+                upd = supabase.table("appointments").update({
+                    "reminder_sent": True
+                }).eq("id", apt["id"]).eq("reminder_sent", False).execute()
+
+                if not upd.data:
+                    continue  # outro processo já marcou
+
+                # Monta contexto com dados do agendamento
+                apt_time = datetime.fromisoformat(apt["start_time"].replace("Z", "+00:00"))
+                apt_local = apt_time.astimezone(__import__("pytz").timezone("America/Fortaleza"))
+
+                ctx = {
+                    "contact": {
+                        "phone": phone,
+                        "name":  contact.get("name", phone),
+                        "id":    contact.get("id", ""),
+                    },
+                    "trigger_data": {"phone": phone, "appointment_id": apt["id"]},
+                    "variables": {
+                        "appointment_id":    apt["id"],
+                        "appointment_time":  apt["start_time"],
+                        "appointment_title": apt.get("title", "Consulta"),
+                        "appointment_date":  apt_local.strftime("%d/%m/%Y"),
+                        "appointment_hour":  apt_local.strftime("%H:%M"),
+                    },
+                    "_simulating": False,
+                }
+
+                await run_flow(reminder_flow["id"], workspace_id, ctx)
+                print(f"📅 Lembrete disparado via flow para {phone} — {apt.get('title')}")
+
+            except Exception as e:
+                print(f"⚠️ trigger_reminder_flows erro apt {apt.get('id')}: {e}")
+
+    except Exception as e:
+        print(f"⚠️ trigger_reminder_flows error: {e}")
+
 
 async def send_appointment_reminders():
     """

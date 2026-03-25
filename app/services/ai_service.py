@@ -158,8 +158,14 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             if not day_hours:
                 return f"❌ {date} é dia fechado conforme horário comercial configurado."
 
-            open_h, open_m   = [int(x) for x in day_hours.get("open",  "08:00").split(":")]
-            close_h, close_m = [int(x) for x in day_hours.get("close", "18:00").split(":")]
+            # Suporta formato antigo (open/close) e novo (start/end)
+            open_str  = day_hours.get("start") or day_hours.get("open",  "09:00")
+            close_str = day_hours.get("end")   or day_hours.get("close", "18:00")
+            # Se open/close é bool (formato errado), usa padrão
+            if not isinstance(open_str, str):  open_str  = "09:00"
+            if not isinstance(close_str, str): close_str = "18:00"
+            open_h, open_m   = [int(x) for x in open_str.split(":")]
+            close_h, close_m = [int(x) for x in close_str.split(":")]
             open_mins  = open_h  * 60 + open_m
             close_mins = close_h * 60 + close_m
 

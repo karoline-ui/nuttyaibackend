@@ -31,11 +31,7 @@ async def start_scheduler():
         id="campaigns", replace_existing=True,
     )
     # Lembretes via flow (trigger.appointment_created + condition.delay)
-    scheduler.add_job(
-        send_appointment_reminders,
-        IntervalTrigger(minutes=5),
-        id="apt_reminders", replace_existing=True,
-    )
+    # send_appointment_reminders desativado — usar trigger_reminder_flows com nós customizados
     scheduler.add_job(
         trigger_reminder_flows,
         IntervalTrigger(minutes=5),

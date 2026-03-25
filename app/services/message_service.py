@@ -122,12 +122,14 @@ async def handle_incoming_message(
                 return  # já processada
 
     # Salva mensagem recebida
+    ext_id_save = raw_payload.get("data", {}).get("key", {}).get("id", "") if raw_payload else ""
     await save_message(workspace_id, conversation_id, {
         "contact_id":   contact_id,
         "direction":    "inbound",
         "content":      str(content)[:8000] if content else f"[{message_type}]",
         "type":         message_type,
         "is_ai":        False,
+        "external_id":  ext_id_save or None,
         "created_at":   datetime.now().isoformat(),
     })
 

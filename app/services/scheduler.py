@@ -215,8 +215,32 @@ async def trigger_reminder_flows():
                     "_simulating": False,
                 }
 
-                await run_flow(reminder_flow["id"], workspace_id, ctx)
-                print(f"📅 Lembrete disparado via flow para {phone} — {apt.get('title')}")
+                # Calcula quanto tempo falta para a consulta
+                hours_left = (apt_time - now).total_seconds() / 3600
+                
+                # Escolhe qual nó de lembrete executar baseado no tempo restante
+                nodes = reminder_flow.get("nodes", [])
+                edges = reminder_flow.get("edges", [])
+                
+                if hours_left <= 3.5:
+                    # Menos de 3.5h → lembrete 3h
+                    start_node = next((n for n in nodes if n["id"] == "lembrete_3h"), None)
+                elif hours_left <= 25:
+                    # Menos de 25h → lembrete 24h
+                    start_node = next((n for n in nodes if n["id"] == "lembrete_24h"), None)
+                else:
+                    start_node = None
+                
+                if start_node:
+                    # Executa diretamente o nó de lembrete — usa botões do nó (btn1/btn2 ou buttons)
+                    from app.api.v1.flows import execute_node
+                    node_cfg = start_node.get("data", {}).get("config", {})
+                    print(f"📅 Executando nó {start_node['id']} botões={node_cfg.get('btn1')}/{node_cfg.get('btn2')} para {phone}")
+                    await execute_node(start_node, ctx, workspace_id, reminder_flow["id"])
+                else:
+                    await run_flow(reminder_flow["id"], workspace_id, ctx)
+                    
+                print(f"📅 Lembrete disparado via flow para {phone} — {apt.get('title')} ({hours_left:.1f}h restantes)")
 
             except Exception as e:
                 print(f"⚠️ trigger_reminder_flows erro apt {apt.get('id')}: {e}")

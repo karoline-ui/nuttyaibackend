@@ -1110,11 +1110,15 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str, flow_id: st
     elif node_type == "action.send_buttons":
         phone   = config.get("to", "") or context.get("contact", {}).get("phone", "")
         message = config.get("message", "")
-        # Suporta btn1/btn2/btn3 ou lista buttons [{id, text}]
-        if config.get("buttons") and isinstance(config["buttons"], list):
+        # Prioriza btn1/btn2/btn3 se preenchidos, senão usa lista buttons
+        btn_list = [b for b in [config.get("btn1"), config.get("btn2"), config.get("btn3")] if b]
+        if btn_list:
+            buttons = btn_list
+        elif config.get("buttons") and isinstance(config["buttons"], list):
             buttons = [b.get("text", b) if isinstance(b, dict) else b for b in config["buttons"] if b]
         else:
-            buttons = [b for b in [config.get("btn1"), config.get("btn2"), config.get("btn3")] if b]
+            buttons = []
+        print(f"🔘 send_buttons: usando botões={buttons} (de config)")
         # Substitui variáveis de contato e agendamento na mensagem
         contact = context.get("contact", {})
         variables = context.get("variables", {})

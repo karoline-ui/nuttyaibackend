@@ -275,6 +275,11 @@ async def process_incoming_webhook(payload: dict, workspace_id: str):
         # Se content é dict com "text" (ex: mensagem com contextInfo), extrai só o texto
         if isinstance(raw_content, dict) and "text" in raw_content:
             raw_content = raw_content["text"]
+        # Se content é dict de botão clicado, extrai o texto do botão
+        elif isinstance(raw_content, dict) and "selectedDisplayText" in raw_content:
+            raw_content = raw_content.get("selectedDisplayText", "")
+        elif isinstance(raw_content, dict) and "selectedID" in raw_content:
+            raw_content = raw_content.get("selectedDisplayText", raw_content.get("selectedID", ""))
         message_type = "text"
         media_data   = None
         media_mime   = None

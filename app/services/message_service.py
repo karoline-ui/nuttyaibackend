@@ -85,6 +85,20 @@ async def handle_incoming_message(
 
     print(f"🔔 handle_incoming_message: ws={workspace_id} phone={phone} content={content!r}")
 
+    # 0. Dedup rápido via external_id ANTES de qualquer processamento
+    if raw_payload:
+        ext_id_check = raw_payload.get("data", {}).get("key", {}).get("id", "")
+        if ext_id_check:
+            try:
+                existing = supabase.table("messages").select("id").eq(
+                    "workspace_id", workspace_id
+                ).eq("external_id", ext_id_check).limit(1).execute()
+                if existing.data:
+                    print(f"⏭️ Mensagem duplicada ignorada: {ext_id_check}")
+                    return
+            except Exception:
+                pass
+
     # 1. Busca ou cria contato
     contact_result = supabase.table("contacts").select("*").eq(
         "workspace_id", workspace_id).eq("phone", phone).limit(1).execute()
@@ -92,7 +106,10 @@ async def handle_incoming_message(
     if contact_result.data:
         contact = contact_result.data[0]
         # Atualiza nome se ainda é o número (nunca foi preenchido)
-        if contact_name and contact.get("name", "") == phone:
+        # Só atualiza com wa_name se ainda é o número (nunca foi preenchido pela IA)
+        # Não sobrescreve nome real que a IA já coletou
+        current_name = contact.get("name", "")
+        if contact_name and current_name == phone:
             supabase.table("contacts").update({"name": contact_name}).eq(
                 "id", contact["id"]).execute()
             contact["name"] = contact_name
@@ -100,7 +117,7 @@ async def handle_incoming_message(
         new_contact = supabase.table("contacts").insert({
             "workspace_id": workspace_id,
             "phone": phone,
-            "name": contact_name or phone,
+            "name": phone,  # IA vai perguntar o nome real
             "tags": ["novo"],
         }).execute()
         contact = new_contact.data[0] if new_contact.data else {"id": None, "phone": phone, "name": phone, "tags": []}

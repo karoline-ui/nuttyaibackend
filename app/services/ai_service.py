@@ -75,22 +75,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             ).eq("phone", contact_phone).limit(1).execute()
             
             if not contact.data:
-                # Tenta sem código do país alternativo
-                alt_phone = contact_phone.lstrip("55") if contact_phone.startswith("55") else "55" + contact_phone
-                contact = supabase.table("contacts").select("id").eq(
-                    "workspace_id", workspace_id
-                ).eq("phone", alt_phone).limit(1).execute()
-            
-            if not contact.data:
-                print(f"❌ Contato não encontrado para phone={contact_phone}")
-                return f"❌ Contato não encontrado para {contact_phone}"
-            
-            contact_id_val = contact.data[0]["id"]
-            print(f"✅ Contact_id encontrado: {contact_id_val} para phone={contact_phone}")
+                return "❌ Contato não encontrado"
             
             result = supabase.table("appointments").insert({
                 "workspace_id": workspace_id,
-                "contact_id": contact_id_val,
+                "contact_id": contact.data[0]["id"],
                 "title": title,
                 "start_time": start_utc,
                 "end_time": end_utc,
@@ -405,16 +394,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
         except Exception as e:
             return "Erro na transferencia: " + str(e)
 
+    # A IA não executa ações — os nós do flow fazem isso
+    # Só mantém update_contact_info para salvar nome/dados coletados na conversa
     return [
-        schedule_appointment,
-        get_available_slots,
-        cancel_appointment,
-        get_contact_history,
         update_contact_info,
-        send_media_file,
         search_knowledge_base,
-        create_reminder,
-        transfer_to_human,
     ]
 
 

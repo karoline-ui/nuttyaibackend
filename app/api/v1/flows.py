@@ -763,6 +763,32 @@ async def run_flow(
                     # 1. sourceHandle explícito
                     true_edges  = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("true","yes","1","a")]
                     false_edges = [e for e in all_edges if str(e.get("sourceHandle","")).lower() in ("false","no","0","b")]
+                    
+                    # Se TRUE: executa o branch true e para (não continua para outros ifs)
+                    # Se FALSE: continua para o próximo nó no branch false
+                    if r and true_edges and node_type_check == "condition.if":
+                        # Executa todos os nós do branch true até o fim
+                        _branch_node_id = true_edges[0].get("target")
+                        while _branch_node_id:
+                            _branch_node = next((n for n in nodes if n["id"] == _branch_node_id), None)
+                            if not _branch_node or _branch_node_id in visited:
+                                break
+                            visited.add(_branch_node_id)
+                            _branch_type = _branch_node.get("data", {}).get("nodeType", "")
+                            print(f"🔀 branch TRUE executando: {_branch_node_id} ({_branch_type})")
+                            _branch_result = await execute_node(_branch_node, context, workspace_id, flow_id)
+                            context["variables"][f"node_{_branch_node_id}"] = _branch_result
+                            # Próximo nó do branch
+                            _branch_edges = [e for e in edges if e.get("source") == _branch_node_id]
+                            _branch_node_id = _branch_edges[0].get("target") if _branch_edges else None
+                        # Branch true terminou — continua no false (próximo condition)
+                        next_id = false_edges[0].get("target") if false_edges else None
+                        print(f"🔀 branch TRUE concluído → voltando para false: {next_id}")
+                        if next_id:
+                            current_node = next((n for n in nodes if n["id"] == next_id), None)
+                        else:
+                            break
+                        continue
 
                     # 2. label da edge
                     if not true_edges and not false_edges:
@@ -1110,23 +1136,14 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str, flow_id: st
     elif node_type == "action.send_buttons":
         phone   = config.get("to", "") or context.get("contact", {}).get("phone", "")
         message = config.get("message", "")
-        # Prioriza btn1/btn2/btn3 se preenchidos, senão usa lista buttons
-        btn_list = [b for b in [config.get("btn1"), config.get("btn2"), config.get("btn3")] if b]
-        if btn_list:
-            buttons = btn_list
-        elif config.get("buttons") and isinstance(config["buttons"], list):
+        # Suporta btn1/btn2/btn3 ou lista buttons [{id, text}]
+        if config.get("buttons") and isinstance(config["buttons"], list):
             buttons = [b.get("text", b) if isinstance(b, dict) else b for b in config["buttons"] if b]
         else:
-            buttons = []
-        print(f"🔘 send_buttons: usando botões={buttons} (de config)")
-        # Substitui variáveis de contato e agendamento na mensagem
+            buttons = [b for b in [config.get("btn1"), config.get("btn2"), config.get("btn3")] if b]
+        # Substitui variáveis de contato na mensagem
         contact = context.get("contact", {})
-        variables = context.get("variables", {})
         message = message.replace("{{contact.name}}", contact.get("name", contact.get("phone", "")))
-        message = message.replace("{{appointment.title}}", variables.get("appointment_title", ""))
-        message = message.replace("{{appointment.start_time}}", variables.get("appointment_hour", variables.get("appointment_time", "")))
-        message = message.replace("{{appointment.date}}", variables.get("appointment_date", ""))
-        message = message.replace("{{appointment.hour}}", variables.get("appointment_hour", ""))
         if phone and message and buttons and not context.get("_simulating"):
             await whatsapp_client.send_buttons(phone, message, buttons, workspace_id)
         return {"status": "sent", "type": "buttons", "buttons": buttons}

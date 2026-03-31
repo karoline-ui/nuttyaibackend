@@ -1381,16 +1381,37 @@ async def execute_node(node: Dict, context: Dict, workspace_id: str, flow_id: st
         contact_id = (contact_result.data[0] if contact_result.data else {}).get("id") if contact_result.data else None
         apt_id = None
         if contact_id:
+            # Pega appointment_time do contexto — deve ter sido salvo pela IA via update_contact_info
+            # ou extraído do histórico da conversa
+            from datetime import timezone as _tz, timedelta as _td
+            apt_time_str = context["variables"].get("appointment_time")
+            
+            # Se não tem no contexto, tenta buscar do contact notes
+            if not apt_time_str:
+                contact_data = supabase.table("contacts").select("notes, appointment_time").eq(
+                    "id", contact_id).limit(1).execute()
+                if contact_data.data:
+                    apt_time_str = contact_data.data[0].get("appointment_time") or apt_time_str
+            
+            # Fallback: usa agora + 1 dia às 9h
+            if not apt_time_str:
+                fallback = datetime.now(_tz.utc).replace(hour=12, minute=0, second=0, microsecond=0) + _td(days=1)
+                apt_time_str = fallback.isoformat()
+                print(f"⚠️ appointment_time não encontrado, usando fallback: {apt_time_str}")
+            
+            try:
+                apt_dt = datetime.fromisoformat(str(apt_time_str).replace("Z", "+00:00"))
+            except:
+                apt_dt = datetime.now(_tz.utc) + _td(days=1)
+            
             apt_result = supabase.table("appointments").insert({
                 "workspace_id": workspace_id,
                 "contact_id":   contact_id,
                 "title":        config.get("title", "Consulta"),
                 "status":       "scheduled",
                 "professional": config.get("professional", ""),
-                "start_time":   context["variables"].get("appointment_time", datetime.now().isoformat()),
-                "end_time":     (datetime.fromisoformat(
-                    context["variables"].get("appointment_time", datetime.now().isoformat()).replace("Z","")
-                ) + __import__("datetime").timedelta(minutes=int(config.get("duration_minutes", 50)))).isoformat(),
+                "start_time":   apt_dt.isoformat(),
+                "end_time":     (apt_dt + __import__("datetime").timedelta(minutes=int(config.get("duration_minutes", 50)))).isoformat(),
                 "duration_minutes": int(config.get("duration_minutes", 50)),
                 "reminder_sent": False,
             }).execute()

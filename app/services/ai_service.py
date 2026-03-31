@@ -241,6 +241,11 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             # Evita duplicar: se o nome atual JÁ contém o novo nome, não atualiza
             if name and name != current_name and not current_name.startswith(name):
                 update_data["name"] = name
+            # Salva appointment_time se fornecido
+            if kwargs.get("appointment_time"):
+                update_data["appointment_time"] = kwargs["appointment_time"]
+                # Também salva no contexto para o nó create_appointment usar
+                print(f"📅 appointment_time salvo: {kwargs['appointment_time']}")
             if notes and notes != current_data.get("notes", ""):
                 update_data["notes"] = notes
             if tags:

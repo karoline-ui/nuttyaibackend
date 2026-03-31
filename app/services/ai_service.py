@@ -237,7 +237,9 @@ def build_tools(workspace_id: str, contact_phone: str, conversation_id: str):
             current_data = current.data[0] if current.data else {}
             
             update_data = {}
-            if name and name != current_data.get("name", ""):
+            current_name = current_data.get("name", "")
+            # Evita duplicar: se o nome atual JÁ contém o novo nome, não atualiza
+            if name and name != current_name and not current_name.startswith(name):
                 update_data["name"] = name
             if notes and notes != current_data.get("notes", ""):
                 update_data["notes"] = notes
